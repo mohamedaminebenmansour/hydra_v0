@@ -54,8 +54,17 @@ class DatabaseService {
     return await _isar.reports.get(id);
   }
 
-  /// Retrieve all saved reports, ordered by id.
-  static Future<List<Report>> getAllReports() async {
-    return _isar.reports.where().findAll();
+  /// Retrieve all saved reports, newest first (ORDER BY timestamp DESC).
+  static Future<List<Report>> getAllReports() {
+    return _isar.reports.where().sortByTimestampDesc().findAll();
+  }
+
+  /// Live-sorted stream of all reports (newest first). Emits immediately and
+  /// on every Isar write, so list screens update without manual reloads.
+  static Stream<List<Report>> watchAllReports() {
+    return _isar.reports
+        .where()
+        .sortByTimestampDesc()
+        .watch(fireImmediately: true);
   }
 }

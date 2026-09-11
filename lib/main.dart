@@ -251,13 +251,13 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen>
     with WidgetsBindingObserver {
-  late Future<List<Report>> _reportsFuture;
-
   @override
   void initState() {
     super.initState();
+    // Kept for parity with other screens; the StreamBuilder below already
+    // pushes fresh sorted data on every Isar write, so no manual reload is
+    // needed.
     WidgetsBinding.instance.addObserver(this);
-    _reportsFuture = DatabaseService.getAllReports();
   }
 
   @override
@@ -266,88 +266,69 @@ class _HistoryScreenState extends State<HistoryScreen>
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-query the database whenever the screen comes back into focus
-    // (covers app resume and pop-back-after-save).
-    if (state == AppLifecycleState.resumed) {
-      _reload();
-    }
-  }
-
-  void _reload() {
-    setState(() {
-      _reportsFuture = DatabaseService.getAllReports();
-    });
-  }
-
   Future<void> _openReport(Report report) async {
-    // Re-query when the user pops back from the detail screen.
+    // No reload needed after pop: the stream re-emits on any Isar change.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ReportDetailScreen(report: report),
       ),
     );
-    if (mounted) _reload();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('History')),
-      body: FutureBuilder<List<Report>>(
-        future: _reportsFuture,
+      body: StreamBuilder<List<Report>>(
+        stream: DatabaseService.watchAllReports(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           final reports = snapshot.data ?? const <Report>[];
           if (reports.isEmpty) {
             return const Center(child: Text('No reports yet'));
           }
-          return RefreshIndicator(
-            onRefresh: () async => _reload(),
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: reports.length,
-              itemBuilder: (context, index) {
-                final report = reports[index];
-                final Color borderColor = report.status == 'synced'
-                    ? Colors.green
-                    : Colors.yellow;
-                return InkWell(
-                  onTap: () => _openReport(report),
-                  child: Card(
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: borderColor, width: 3),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Image.file(
-                          File(report.photoPath),
-                          height: 160,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Container(
-                                height: 160,
-                                color: Colors.grey.shade300,
-                                child: const Icon(Icons.broken_image, size: 48),
-                              ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(report.timestamp.toLocal().toString()),
-                        ),
-                      ],
-                    ),
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: reports.length,
+            itemBuilder: (context, index) {
+              final report = reports[index];
+              final Color borderColor = report.status == 'synced'
+                  ? Colors.green
+                  : Colors.yellow;
+              return InkWell(
+                onTap: () => _openReport(report),
+                child: Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: borderColor, width: 3),
                   ),
-                );
-              },
-            ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Image.file(
+                        File(report.photoPath),
+                        height: 160,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(
+                              height: 160,
+                              color: Colors.grey.shade300,
+                              child: const Icon(Icons.broken_image, size: 48),
+                            ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(report.timestamp.toLocal().toString()),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
@@ -469,9 +450,6 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       return false;
     }
   }
-
-  /// Alias kept for readability at recording call sites.
-  bool _isValidRecording(String? path) => _isValidFile(path);
 
   /// Waits for the voice file to appear with a non-zero size. The native
   /// MediaMuxer may still be flushing when stop() resolves, so poll briefly
@@ -790,6 +768,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   late Report _report;
   late Future<Report?> _reportFuture;
 
+  /// Audio player + visual feedback state. Created once, reused for every
+  /// play/pause; disposed with the screen.
+  AudioPlayer? _player;
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<Duration>? _durSub;
+  StreamSubscription<PlayerState>? _stateSub;
+
   @override
   void initState() {
     super.initState();
@@ -801,6 +789,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _stateSub?.cancel();
+    _player?.dispose();
     super.dispose();
   }
 
@@ -815,7 +807,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     }
   }
 
-  Future<void> _play() async {
+  static String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  /// Toggle playback. Creates (once) and subscribes to a persistent player so
+  /// the UI can animate while audio is active and reset when it finishes.
+  Future<void> _togglePlay() async {
+    if (_isPlaying) {
+      await _player?.pause();
+      return;
+    }
     final path = _report.voicePath;
     if (path.isEmpty) {
       if (!mounted) return;
@@ -833,7 +837,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       return;
     }
     try {
-      final player = AudioPlayer();
+      final created = _player == null;
+      final player = _player ??= AudioPlayer();
+      if (created) _attachPlayer(player);
+      await player.setReleaseMode(ReleaseMode.stop);
+      // After a track finished, restart from the beginning.
+      if (_duration > Duration.zero && _position >= _duration) {
+        await player.seek(Duration.zero);
+        _position = Duration.zero;
+      }
       await player.play(DeviceFileSource(path));
     } catch (e, st) {
       debugPrint('PlaybackFlow: play failed for "$path": $e\n$st');
@@ -842,6 +854,27 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         context,
       ).showSnackBar(const SnackBar(content: Text('Play failed')));
     }
+  }
+
+  /// Lazily attaches the streams of a freshly created player.
+  void _attachPlayer(AudioPlayer player) {
+    _posSub = player.onPositionChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _position = d);
+    });
+    _durSub = player.onDurationChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _duration = d);
+    });
+    _stateSub = player.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _isPlaying = state == PlayerState.playing;
+        if (state == PlayerState.completed) {
+          _position = _duration; // show a full bar while it settles back
+        }
+      });
+    });
   }
 
   @override
@@ -881,12 +914,38 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                     child: Text('No voice note'),
                   )
                 else
-                  _ActionButton(
-                    label: 'PLAY',
-                    color: Colors.blue,
-                    icon: Icons.play_arrow,
-                    iconColor: Colors.white,
-                    onTap: () => _play(),
+                  Column(
+                    children: [
+                      _VoiceEqualizer(playing: _isPlaying),
+                      AnimatedOpacity(
+                        opacity: _isPlaying ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              Text(_fmt(_position)),
+                              Expanded(
+                                child: LinearProgressIndicator(
+                                  value: _duration > Duration.zero
+                                      ? _position.inMilliseconds /
+                                            _duration.inMilliseconds
+                                      : 0.0,
+                                ),
+                              ),
+                              Text(_fmt(_duration)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      _ActionButton(
+                        label: _isPlaying ? 'PAUSE' : 'PLAY',
+                        color: Colors.blue,
+                        icon: _isPlaying ? Icons.pause : Icons.play_arrow,
+                        iconColor: Colors.white,
+                        onTap: () => _togglePlay(),
+                      ),
+                    ],
                   ),
               ],
             );
@@ -896,3 +955,82 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 }
+
+/// Animated 5-bar equalizer that moves only while audio is playing and
+/// settles to a flat row when idle.
+class _VoiceEqualizer extends StatefulWidget {
+  const _VoiceEqualizer({required this.playing});
+
+  final bool playing;
+
+  @override
+  State<_VoiceEqualizer> createState() => _VoiceEqualizerState();
+}
+
+class _VoiceEqualizerState extends State<_VoiceEqualizer>
+    with SingleTickerProviderStateMixin {
+  static const int _barCount = 5;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.playing) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VoiceEqualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.playing && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.playing && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return SizedBox(
+          height: 48,
+          child: Align(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_barCount, (i) {
+                final phase = (_controller.value + i * 0.19) % 1.0;
+                // Triangle-wave in [0,1]: peaks in the middle of the cycle.
+                final wave = 1.0 - (phase - 0.5).abs() * 2;
+                final factor = widget.playing ? 0.30 + 0.70 * wave : 0.25;
+                return Container(
+                  width: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  height: 44 * factor,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(
+                      alpha: widget.playing ? 1.0 : 0.4,
+                    ),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
