@@ -54,8 +54,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // store it persistently in the documents directory so the OS does not
       // delete it and it uploads quickly even on slow 3G networks.
       final dir = await getApplicationDocumentsDirectory();
-      final reportsDir =
-          await Directory('${dir.path}/reports').create(recursive: true);
+      final reportsDir = await Directory(
+        '${dir.path}/reports',
+      ).create(recursive: true);
       final savedPath =
           '${reportsDir.path}/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
@@ -75,36 +76,78 @@ class _HomeScreenState extends State<HomeScreen> {
           // space (best effort).
           try {
             await File(photo.path).delete();
-          } catch (_) {}
+          } catch (e, st) {
+            debugPrint('ImageFlow: raw capture cleanup failed: $e\n$st');
+          }
         } else {
+          debugPrint(
+            'ImageFlow: compressAndGetFile returned null '
+            'for $savedPath — falling back to raw copy',
+          );
+          storedPath = savedPath;
+          try {
+            await File(photo.path).copy(savedPath);
+          } catch (e, st) {
+            debugPrint('ImageFlow: raw copy fallback failed: $e\n$st');
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Could not store photo')),
+            );
+            return;
+          }
+        }
+      } catch (e, st) {
+        // Compression unavailable: fall back to saving the raw capture.
+        debugPrint('ImageFlow: compression threw, using raw copy: $e\n$st');
+        try {
           storedPath = savedPath;
           await File(photo.path).copy(savedPath);
+        } catch (e2, st2) {
+          debugPrint('ImageFlow: raw copy fallback failed: $e2\n$st2');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not store photo')),
+          );
+          return;
         }
-      } catch (_) {
-        // Compression unavailable: fall back to saving the raw capture.
-        storedPath = savedPath;
-        await File(photo.path).copy(savedPath);
+      }
+
+      // Never navigate with a photo path that does not point at a real,
+      // non-empty file — otherwise the save step would persist a broken path.
+      if (storedPath.isEmpty ||
+          !File(storedPath).existsSync() ||
+          File(storedPath).lengthSync() == 0) {
+        debugPrint('ImageFlow: stored photo invalid: "$storedPath"');
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not store photo')));
+        return;
       }
 
       if (!mounted) return;
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              SaveReportScreen(type: type, photoPath: storedPath),
+          builder: (_) => SaveReportScreen(type: type, photoPath: storedPath),
         ),
       );
-    } catch (_) {
+      if (mounted) setState(() {});
+    } catch (e, st) {
+      debugPrint('ImageFlow: camera flow failed: $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Camera not available')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Camera not available')));
     }
   }
 
-  void _openHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
-    );
+  Future<void> _openHistory() async {
+    // Await the push so we can rebuild after returning; HistoryScreen also
+    // re-queries when it regains focus (see its WidgetsBindingObserver).
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
+    if (mounted) setState(() {});
   }
 
   @override
@@ -196,6 +239,7 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
+
 /// Displays all locally saved Reports in a scrollable list with a colored
 /// status border (Yellow = pending, Green = synced).
 class HistoryScreen extends StatefulWidget {
@@ -205,13 +249,30 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> {
+class _HistoryScreenState extends State<HistoryScreen>
+    with WidgetsBindingObserver {
   late Future<List<Report>> _reportsFuture;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _reportsFuture = DatabaseService.getAllReports();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-query the database whenever the screen comes back into focus
+    // (covers app resume and pop-back-after-save).
+    if (state == AppLifecycleState.resumed) {
+      _reload();
+    }
   }
 
   void _reload() {
@@ -220,12 +281,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
-  void _openReport(Report report) {
-    Navigator.of(context).push(
+  Future<void> _openReport(Report report) async {
+    // Re-query when the user pops back from the detail screen.
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ReportDetailScreen(report: report),
       ),
     );
+    if (mounted) _reload();
   }
 
   @override
@@ -249,38 +312,40 @@ class _HistoryScreenState extends State<HistoryScreen> {
               itemCount: reports.length,
               itemBuilder: (context, index) {
                 final report = reports[index];
-                final Color borderColor =
-                    report.status == 'synced' ? Colors.green : Colors.yellow;
+                final Color borderColor = report.status == 'synced'
+                    ? Colors.green
+                    : Colors.yellow;
                 return InkWell(
                   onTap: () => _openReport(report),
                   child: Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: borderColor, width: 3),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Image.file(
-                        File(report.photoPath),
-                        height: 160,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: borderColor, width: 3),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Image.file(
+                          File(report.photoPath),
                           height: 160,
-                          color: Colors.grey.shade300,
-                          child: const Icon(Icons.broken_image, size: 48),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                height: 160,
+                                color: Colors.grey.shade300,
+                                child: const Icon(Icons.broken_image, size: 48),
+                              ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(report.timestamp.toLocal().toString()),
-                      ),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(report.timestamp.toLocal().toString()),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-);
+                );
               },
             ),
           );
@@ -289,6 +354,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 }
+
 /// Shown after a photo is captured: previews the image, lets the user record an
 /// optional voice note, then confirms the local Report save.
 class SaveReportScreen extends StatefulWidget {
@@ -307,7 +373,7 @@ class SaveReportScreen extends StatefulWidget {
 
 class _SaveReportScreenState extends State<SaveReportScreen>
     with SingleTickerProviderStateMixin {
-  late final AudioRecorder _recorder;
+  late AudioRecorder _recorder;
   late final AnimationController _pulseController;
 
   /// True while the microphone is actively recording.
@@ -318,6 +384,18 @@ class _SaveReportScreenState extends State<SaveReportScreen>
 
   Timer? _autoStopTimer;
   bool _saving = false;
+
+  /// True while [_stopRecording] is in flight, to prevent duplicate native
+  /// stop() calls (which crash MPEG4Writer on Android).
+  bool _stopping = false;
+
+  /// Completer signalling that the in-flight stop has fully finished
+  /// (including file validation). [_save] awaits this so it never validates
+  /// currentVoicePath before stop() has completed.
+  Completer<void>? _stopCompleter;
+
+  /// True once the recorder instance has been disposed, so we never reuse it.
+  bool _recorderDisposed = false;
 
   @override
   void initState() {
@@ -335,12 +413,97 @@ class _SaveReportScreenState extends State<SaveReportScreen>
   @override
   void dispose() {
     _autoStopTimer?.cancel();
+    _autoStopTimer = null;
     _pulseController.dispose();
-    _recorder.dispose();
+    // Always stop an active recording before disposing the recorder, so the
+    // native encoder finalizes the file instead of crashing (MPEG4Writer).
+    // Fire-and-forget: dispose() cannot be async.
+    final recorder = _recorder;
+    _recorderDisposed = true;
+    () async {
+      try {
+        if (await recorder.isRecording()) {
+          debugPrint('RecordFlow: dispose stopping an active recording');
+          await recorder.stop();
+        }
+        await recorder.dispose();
+      } catch (e, st) {
+        // Swallow teardown races; the recorder is going away anyway.
+        debugPrint('RecordFlow: teardown during dispose failed: $e\n$st');
+        try {
+          await recorder.dispose();
+        } catch (e2, st2) {
+          debugPrint(
+            'RecordFlow: dispose after failure also failed: $e2\n$st2',
+          );
+        }
+      }
+    }();
     super.dispose();
   }
 
+  /// Creates a fresh recorder instance, disposing any broken previous one.
+  /// Used to recover from a wedged encoder after a failed start/stop cycle.
+  void _resetRecorder() {
+    if (_recorderDisposed) return;
+    final old = _recorder;
+    () async {
+      try {
+        await old.dispose();
+      } catch (e, st) {
+        debugPrint('RecordFlow: old recorder dispose failed: $e\n$st');
+      }
+    }();
+    _recorder = AudioRecorder();
+    debugPrint('RecordFlow: recorder instance reset after failure');
+  }
+
+  /// True only when [path] points to an existing, non-empty file.
+  /// Used for both voice notes and photos.
+  bool _isValidFile(String? path) {
+    if (path == null || path.isEmpty) return false;
+    try {
+      final f = File(path);
+      return f.existsSync() && f.lengthSync() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Alias kept for readability at recording call sites.
+  bool _isValidRecording(String? path) => _isValidFile(path);
+
+  /// Waits for the voice file to appear with a non-zero size. The native
+  /// MediaMuxer may still be flushing when stop() resolves, so poll briefly
+  /// before declaring the recording invalid.
+  Future<bool> _waitForVoiceFile(
+    String? path, {
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    if (path == null || path.isEmpty) return false;
+    final deadline = DateTime.now().add(timeout);
+    var attempts = 0;
+    while (DateTime.now().isBefore(deadline)) {
+      attempts++;
+      try {
+        final f = File(path);
+        if (f.existsSync() && f.lengthSync() > 0) {
+          debugPrint(
+            'RecordFlow: voice file finalized after '
+            '${attempts * 50}ms: $path',
+          );
+          return true;
+        }
+      } catch (e, st) {
+        debugPrint('RecordFlow: voice file probe failed: $e\n$st');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    return false;
+  }
+
   Future<void> _onMicTap() async {
+    if (_stopping) return; // a stop is in flight; ignore taps meanwhile
     if (isRecording) {
       await _stopRecording();
       return;
@@ -355,8 +518,9 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       }
 
       final dir = await getApplicationDocumentsDirectory();
-      final reportsDir =
-          await Directory('${dir.path}/reports').create(recursive: true);
+      final reportsDir = await Directory(
+        '${dir.path}/reports',
+      ).create(recursive: true);
       final path =
           '${reportsDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _recorder.start(const RecordConfig(), path: path);
@@ -369,47 +533,137 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       _pulseController.repeat(reverse: true);
       // Stop automatically after 15 seconds.
       _autoStopTimer = Timer(const Duration(seconds: 15), _stopRecording);
-    } catch (_) {
+    } catch (e, st) {
+      // The recorder instance may be wedged; recreate it so the next tap can
+      // start a fresh session instead of failing forever.
+      debugPrint('RecordFlow: recording start failed: $e\n$st');
+      _resetRecorder();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Recording failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Recording failed')));
     }
   }
 
   Future<void> _stopRecording() async {
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
-    if (!isRecording) return;
+    if (_stopping || !isRecording) return;
+    _stopping = true;
+    _stopCompleter = Completer<void>();
     _pulseController.stop();
     try {
+      // Ask the plugin for the authoritative native state BEFORE stopping.
+      // If it already stopped (e.g. a prior stop raced with the auto-stop
+      // timer), calling stop() again would crash MPEG4Writer on Android.
+      bool activelyRecording = false;
+      try {
+        activelyRecording = await _recorder.isRecording();
+      } catch (e, st) {
+        debugPrint('RecordFlow: isRecording() probe failed: $e\n$st');
+      }
+      if (!activelyRecording) {
+        if (!mounted) return;
+        setState(() {
+          isRecording = false;
+        });
+        return;
+      }
       final stoppedPath = await _recorder.stop();
+      // Give the native muxer a moment to flush; a 0-byte file right after
+      // stop() often finalizes within a few hundred milliseconds.
+      final stoppedValid = await _waitForVoiceFile(stoppedPath);
+      final fallbackValid = stoppedValid
+          ? false
+          : await _waitForVoiceFile(currentVoicePath);
       if (!mounted) return;
       setState(() {
         isRecording = false;
-        // Only trust the returned path; keep the path we started with as a
-        // fallback so the voice file is never lost.
-        if (stoppedPath != null && stoppedPath.isNotEmpty) {
+        // Only trust a path that now points at a real, non-empty file.
+        // Otherwise clean up so nothing broken is persisted.
+        if (stoppedValid) {
           currentVoicePath = stoppedPath;
+        } else if (fallbackValid) {
+          // Keep the started path (already set) — stop() returned nothing
+          // useful but the started file is intact.
+          debugPrint(
+            'RecordFlow: stop() path invalid, keeping started '
+            'voice file: "$currentVoicePath"',
+          );
+        } else {
+          debugPrint(
+            'RecordFlow: no valid voice file after stop '
+            '(stopped: "$stoppedPath", started: "$currentVoicePath")',
+          );
+          for (final p in [stoppedPath, currentVoicePath]) {
+            if (p != null && p.isNotEmpty) {
+              try {
+                final f = File(p);
+                if (f.existsSync()) f.deleteSync();
+              } catch (e, st) {
+                debugPrint('RecordFlow: broken voice cleanup failed: $e\n$st');
+              }
+            }
+          }
+          currentVoicePath = null;
         }
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('RecordFlow: recorder stop failed: $e\n$st');
       if (!mounted) return;
       setState(() {
         isRecording = false;
       });
+    } finally {
+      _stopping = false;
+      _stopCompleter?.complete();
+      _stopCompleter = null;
     }
   }
 
   Future<void> _save() async {
     if (_saving) return;
-    if (isRecording) {
+    // Wait for any in-flight stop to fully finish FIRST. Without this, a
+    // stop-then-immediately-save sequence validated currentVoicePath before
+    // stop() completed and silently saved a photo-only report ("No voice
+    // note") even though the .m4a file finalized on disk moments later.
+    if (_stopCompleter != null) {
+      await _stopCompleter!.future;
+    } else if (isRecording) {
       await _stopRecording();
     }
     setState(() {
       _saving = true;
     });
     try {
+      // Re-validate the voice file at save time: if the recording was
+      // interrupted (e.g. app backgrounded and lost focus), the file may not
+      // exist or may be empty. Save a photo-only report rather than a broken
+      // path in the database.
+      if (!_isValidFile(currentVoicePath)) {
+        debugPrint(
+          'SaveFlow: voice file invalid, saving photo-only report '
+          '(path was: "$currentVoicePath")',
+        );
+        currentVoicePath = null;
+      }
+      // Symmetric validation for the photo: it is mandatory, so block the
+      // save entirely if the file is missing or empty instead of persisting
+      // a broken path to Isar.
+      if (!_isValidFile(widget.photoPath)) {
+        debugPrint(
+          'SaveFlow: photo file invalid, blocking save '
+          '(path was: "${widget.photoPath}")',
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo file missing, cannot save')),
+        );
+        setState(() {
+          _saving = false;
+        });
+        return;
+      }
       final report = Report()
         ..type = widget.type
         ..photoPath = widget.photoPath
@@ -418,17 +672,19 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..lng = 0.0
         ..timestamp = DateTime.now()
         ..status = 'pending';
-      await DatabaseService.saveReport(report);
+      final savedId = await DatabaseService.saveReport(report);
+      debugPrint('SaveFlow: report persisted with Isar id=$savedId');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved Locally')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Saved Locally')));
       Navigator.of(context).pop();
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('SaveFlow: Isar saveReport failed: $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Save failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Save failed')));
       setState(() {
         _saving = false;
       });
@@ -468,16 +724,17 @@ class _SaveReportScreenState extends State<SaveReportScreen>
                             AnimatedBuilder(
                               animation: _pulseController,
                               builder: (context, child) {
-                                final t = Curves.easeInOut
-                                    .transform(_pulseController.value);
+                                final t = Curves.easeInOut.transform(
+                                  _pulseController.value,
+                                );
                                 return Transform.scale(
                                   scale: 1.0 + (0.15 * t),
                                   child: Icon(
                                     isRecording ? Icons.stop : Icons.mic,
                                     size: 80,
                                     color: Color.lerp(
-                                      Colors.red,
-                                      Colors.redAccent,
+                                      Colors.white,
+                                      Colors.white10,
                                       t,
                                     ),
                                   ),
@@ -516,6 +773,7 @@ class _SaveReportScreenState extends State<SaveReportScreen>
     );
   }
 }
+
 /// Shows a single Report with the photo and a play button for its voice note.
 class ReportDetailScreen extends StatefulWidget {
   const ReportDetailScreen({super.key, required this.report});
@@ -526,59 +784,113 @@ class ReportDetailScreen extends StatefulWidget {
   State<ReportDetailScreen> createState() => _ReportDetailScreenState();
 }
 
-class _ReportDetailScreenState extends State<ReportDetailScreen> {
+class _ReportDetailScreenState extends State<ReportDetailScreen>
+    with WidgetsBindingObserver {
+  /// Latest copy of the report, refreshed from Isar on focus changes.
+  late Report _report;
+  late Future<Report?> _reportFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _report = widget.report;
+    _reportFuture = DatabaseService.getReportById(widget.report.id);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-fetch the record from Isar when the screen regains focus, so the
+    // photo/voice paths shown are always the latest stored values.
+    if (state == AppLifecycleState.resumed) {
+      setState(() {
+        _reportFuture = DatabaseService.getReportById(widget.report.id);
+      });
+    }
+  }
+
   Future<void> _play() async {
-    final path = widget.report.voicePath;
-    if (path.isEmpty || !File(path).existsSync()) {
+    final path = _report.voicePath;
+    if (path.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No voice note found')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No voice note')));
+      return;
+    }
+    if (!File(path).existsSync()) {
+      debugPrint('PlaybackFlow: voicePath set but file missing: "$path"');
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Voice file missing')));
       return;
     }
     try {
       final player = AudioPlayer();
       await player.play(DeviceFileSource(path));
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('PlaybackFlow: play failed for "$path": $e\n$st');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Play failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Play failed')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final report = widget.report;
     return Scaffold(
       appBar: AppBar(title: const Text('Report')),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Image.file(
-                File(report.photoPath),
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.broken_image, size: 80),
+        child: FutureBuilder<Report?>(
+          future: _reportFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final Report? latest = snapshot.data;
+            if (latest == null) {
+              // The record was deleted (or the id is no longer valid).
+              return const Center(child: Text('Report no longer exists'));
+            }
+            // Use the fresh Isar record (latest paths), falling back to the
+            // widget-supplied snapshot only for the very first frame.
+            _report = latest;
+            return Column(
+              children: [
+                Expanded(
+                  child: Image.file(
+                    File(latest.photoPath),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: Colors.grey.shade300,
+                      child: const Icon(Icons.broken_image, size: 80),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            if (report.voicePath.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: const Text('No voice note'),
-              )
-            else
-              _ActionButton(
-                label: 'PLAY',
-                color: Colors.blue,
-                icon: Icons.play_arrow,
-                iconColor: Colors.white,
-                onTap: () => _play(),
-              ),
-          ],
+                if (latest.voicePath.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No voice note'),
+                  )
+                else
+                  _ActionButton(
+                    label: 'PLAY',
+                    color: Colors.blue,
+                    icon: Icons.play_arrow,
+                    iconColor: Colors.white,
+                    onTap: () => _play(),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

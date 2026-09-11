@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -19,18 +20,38 @@ class DatabaseService {
   /// Open the Isar database in the application documents directory.
   static Future<void> init() async {
     final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open(
-      [ReportSchema],
-      directory: dir.path,
-      name: _dbName,
-    );
+    try {
+      _isar = await Isar.open(
+        [ReportSchema],
+        directory: dir.path,
+        name: _dbName,
+      );
+      debugPrint('DatabaseFlow: Isar opened at ${dir.path}/$_dbName');
+    } catch (e, st) {
+      debugPrint('DatabaseFlow: Isar.open failed: $e\n$st');
+      rethrow;
+    }
   }
 
   /// Insert or update a [Report] in the database.
-  static Future<void> saveReport(Report report) async {
-    await _isar.writeTxn(
-      () => _isar.reports.put(report),
-    );
+  /// Returns the generated Isar id of the saved record.
+  static Future<int> saveReport(Report report) async {
+    try {
+      final id = await _isar.writeTxn(
+        () => _isar.reports.put(report),
+      );
+      debugPrint('DatabaseFlow: report saved '
+          '(id=$id, photo=${report.photoPath}, voice=${report.voicePath})');
+      return id;
+    } catch (e, st) {
+      debugPrint('DatabaseFlow: writeTxn/put failed: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Retrieve a single report by its Isar id.
+  static Future<Report?> getReportById(int id) async {
+    return await _isar.reports.get(id);
   }
 
   /// Retrieve all saved reports, ordered by id.
