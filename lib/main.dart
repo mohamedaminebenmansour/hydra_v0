@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import 'models/report.dart';
 import 'services/database_service.dart';
@@ -40,8 +43,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
 
-  /// Catch any button tap: immediately open the camera, then save the photo
-  /// persistently with a local Report record.
+  /// Catch any button tap: immediately open the camera, compress the capture,
+  /// then open the Save Report screen (voice note + confirm).
   Future<void> _onTap(String type) async {
     try {
       final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
@@ -83,19 +86,12 @@ class _HomeScreenState extends State<HomeScreen> {
         await File(photo.path).copy(savedPath);
       }
 
-      // Persist a Report with dummy GPS and 'pending' status.
-      final report = Report()
-        ..type = type
-        ..photoPath = storedPath
-        ..lat = 0.0
-        ..lng = 0.0
-        ..timestamp = DateTime.now()
-        ..status = 'pending';
-      await DatabaseService.saveReport(report);
-
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved Locally')),
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              SaveReportScreen(type: type, photoPath: storedPath),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
@@ -224,6 +220,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  void _openReport(Report report) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReportDetailScreen(report: report),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -247,7 +251,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 final report = reports[index];
                 final Color borderColor =
                     report.status == 'synced' ? Colors.green : Colors.yellow;
-                return Card(
+                return InkWell(
+                  onTap: () => _openReport(report),
+                  child: Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -273,11 +279,307 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       ),
                     ],
                   ),
-                );
+                ),
+);
               },
             ),
           );
         },
+      ),
+    );
+  }
+}
+/// Shown after a photo is captured: previews the image, lets the user record an
+/// optional voice note, then confirms the local Report save.
+class SaveReportScreen extends StatefulWidget {
+  const SaveReportScreen({
+    super.key,
+    required this.type,
+    required this.photoPath,
+  });
+
+  final String type;
+  final String photoPath;
+
+  @override
+  State<SaveReportScreen> createState() => _SaveReportScreenState();
+}
+
+class _SaveReportScreenState extends State<SaveReportScreen>
+    with SingleTickerProviderStateMixin {
+  late final AudioRecorder _recorder;
+  late final AnimationController _pulseController;
+
+  /// True while the microphone is actively recording.
+  bool isRecording = false;
+
+  /// Path of the voice note being/already recorded (null until recorded).
+  String? currentVoicePath;
+
+  Timer? _autoStopTimer;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _recorder = AudioRecorder();
+    // Drives the continuous pulse of the mic icon while recording.
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+      lowerBound: 0.0,
+      upperBound: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _autoStopTimer?.cancel();
+    _pulseController.dispose();
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onMicTap() async {
+    if (isRecording) {
+      await _stopRecording();
+      return;
+    }
+    try {
+      if (!await _recorder.hasPermission()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required')),
+        );
+        return;
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final reportsDir =
+          await Directory('${dir.path}/reports').create(recursive: true);
+      final path =
+          '${reportsDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(const RecordConfig(), path: path);
+
+      if (!mounted) return;
+      setState(() {
+        isRecording = true;
+        currentVoicePath = path;
+      });
+      _pulseController.repeat(reverse: true);
+      // Stop automatically after 15 seconds.
+      _autoStopTimer = Timer(const Duration(seconds: 15), _stopRecording);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recording failed')),
+      );
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _autoStopTimer?.cancel();
+    _autoStopTimer = null;
+    if (!isRecording) return;
+    _pulseController.stop();
+    try {
+      final stoppedPath = await _recorder.stop();
+      if (!mounted) return;
+      setState(() {
+        isRecording = false;
+        // Only trust the returned path; keep the path we started with as a
+        // fallback so the voice file is never lost.
+        if (stoppedPath != null && stoppedPath.isNotEmpty) {
+          currentVoicePath = stoppedPath;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        isRecording = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    if (isRecording) {
+      await _stopRecording();
+    }
+    setState(() {
+      _saving = true;
+    });
+    try {
+      final report = Report()
+        ..type = widget.type
+        ..photoPath = widget.photoPath
+        ..voicePath = currentVoicePath ?? ''
+        ..lat = 0.0
+        ..lng = 0.0
+        ..timestamp = DateTime.now()
+        ..status = 'pending';
+      await DatabaseService.saveReport(report);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saved Locally')),
+      );
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Save failed')),
+      );
+      setState(() {
+        _saving = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Save Report')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Image.file(
+                File(widget.photoPath),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.broken_image, size: 80),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                // Mic button with a continuous pulse while recording.
+                Expanded(
+                  child: Material(
+                    color: Colors.red,
+                    child: InkWell(
+                      onTap: _onMicTap,
+                      child: SizedBox(
+                        height: 160,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AnimatedBuilder(
+                              animation: _pulseController,
+                              builder: (context, child) {
+                                final t = Curves.easeInOut
+                                    .transform(_pulseController.value);
+                                return Transform.scale(
+                                  scale: 1.0 + (0.15 * t),
+                                  child: Icon(
+                                    isRecording ? Icons.stop : Icons.mic,
+                                    size: 80,
+                                    color: Color.lerp(
+                                      Colors.red,
+                                      Colors.redAccent,
+                                      t,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isRecording ? 'RECORDING' : 'VOICE',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _ActionButton(
+                    label: 'SAVE',
+                    color: Colors.green,
+                    icon: Icons.check,
+                    iconColor: Colors.white,
+                    onTap: () => _save(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+/// Shows a single Report with the photo and a play button for its voice note.
+class ReportDetailScreen extends StatefulWidget {
+  const ReportDetailScreen({super.key, required this.report});
+
+  final Report report;
+
+  @override
+  State<ReportDetailScreen> createState() => _ReportDetailScreenState();
+}
+
+class _ReportDetailScreenState extends State<ReportDetailScreen> {
+  Future<void> _play() async {
+    final path = widget.report.voicePath;
+    if (path.isEmpty || !File(path).existsSync()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No voice note found')),
+      );
+      return;
+    }
+    try {
+      final player = AudioPlayer();
+      await player.play(DeviceFileSource(path));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Play failed')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final report = widget.report;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Report')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Image.file(
+                File(report.photoPath),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.broken_image, size: 80),
+                ),
+              ),
+            ),
+            if (report.voicePath.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: const Text('No voice note'),
+              )
+            else
+              _ActionButton(
+                label: 'PLAY',
+                color: Colors.blue,
+                icon: Icons.play_arrow,
+                iconColor: Colors.white,
+                onTap: () => _play(),
+              ),
+          ],
+        ),
       ),
     );
   }

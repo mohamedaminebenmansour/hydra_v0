@@ -34,6 +34,13 @@ android {
     }
 }
 
+dependencies {
+    implementation("androidx.annotation:annotation:1.8.2")
+}
+
+kotlin {
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
