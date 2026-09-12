@@ -411,93 +411,211 @@ class _HistoryScreenState extends State<HistoryScreen>
     return DateFormat('EEEE, d MMMM').format(local);
   }
 
-  /// One glanceable report tile: 80x80 photo with a 4px traffic-light border,
-  /// a type icon + time in the middle, and an optional mic icon.
+  /// A compact sync-status badge shown on each history card.
+  Widget _syncBadge(Report report) {
+    return switch (report.syncState) {
+      SyncState.synced => _badge(
+          Icons.check_circle,
+          Colors.green,
+          'Synced',
+          null,
+        ),
+      SyncState.uploading => _badge(
+          Icons.hourglass_top,
+          Colors.amber.shade700,
+          'Syncing…',
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      SyncState.failed => _badge(
+          Icons.error,
+          Colors.red,
+          'Tap to retry',
+          null,
+          () => _retryReport(report),
+        ),
+      SyncState.local => _badge(
+          Icons.cloud_off,
+          Colors.grey,
+          'Saved on phone',
+          null,
+        ),
+    };
+  }
+
+  Widget _badge(
+    IconData icon,
+    Color color,
+    String label, [
+    Widget? trailing,
+    VoidCallback? onTap,
+  ]) {
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 4), trailing],
+      ],
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: onTap == null
+          ? content
+          : InkWell(onTap: onTap, child: content),
+    );
+  }
+
+  Future<void> _retryReport(Report report) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Retrying sync…')),
+    );
+    await SyncService.retryReport(report.id);
+  }
+
+  /// Thumbnail that works offline (local file) and falls back to a network
+  /// image for pulled remote records.
+  Widget _reportThumb(Report report, {double size = 80}) {
+    final path = report.photoPath;
+    if (path.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.grey.shade200,
+        child: const Icon(Icons.image_not_supported, size: 32),
+      );
+    }
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return Image.network(
+        path,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          width: size,
+          height: size,
+          color: Colors.grey.shade300,
+          child: const Icon(Icons.broken_image, size: 32),
+        ),
+      );
+    }
+    final exists = File(path).existsSync();
+    if (!exists) {
+      return Container(
+        width: size,
+        height: size,
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.image_not_supported, size: 32),
+      );
+    }
+    return Image.file(
+      File(path),
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => Container(
+        width: size,
+        height: size,
+        color: Colors.grey.shade300,
+        child: const Icon(Icons.broken_image, size: 32),
+      ),
+    );
+  }
+
+  /// One glanceable report tile: 80x80 photo with a traffic-light border,
+  /// One glanceable report tile: 80x80 photo with a traffic-light border,
+  /// a type icon + time in the middle, an optional mic icon, and a badge.
   Widget _trafficCard(Report report) {
-    final Color borderColor = report.status == 'synced'
-        ? Colors.green
-        : report.status == 'failed'
-            ? Colors.red
-            : Colors.yellow;
-    final bool hasPhoto =
-        report.photoPath.isNotEmpty && File(report.photoPath).existsSync();
-    final Widget thumb = hasPhoto
-        ? Image.file(
-            File(report.photoPath),
-            width: 80,
-            height: 80,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => Container(
-              width: 80,
-              height: 80,
-              color: Colors.grey.shade300,
-              child: const Icon(Icons.broken_image, size: 32),
-            ),
-          )
-        : Container(
-            width: 80,
-            height: 80,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.image_not_supported, size: 32),
-          );
+    final state = report.syncState;
+    final Color borderColor = switch (state) {
+      SyncState.synced => Colors.green,
+      SyncState.failed => Colors.red,
+      SyncState.uploading => Colors.amber.shade700,
+      SyncState.local => Colors.grey,
+    };
+    final Widget thumb = _reportThumb(report);
     final IconData typeIcon = switch (report.type) {
-      'work' => Icons.check_circle,
-      'problem' => Icons.warning,
+      'work' => Icons.handyman,
+      'problem' => Icons.warning_amber_rounded,
       _ => Icons.inventory_2,
     };
     final Color typeColor = switch (report.type) {
-      'work' => Colors.green,
+      'work' => Colors.blue,
       'problem' => Colors.red,
-      _ => Colors.yellow.shade700,
+      _ => Colors.amber.shade700,
     };
-    final Widget trailing = report.voicePath.isNotEmpty
-        ? Icon(Icons.mic, size: 36, color: Colors.blue)
-        : const SizedBox(width: 1);
+    final bool hasVoice =
+        report.voicePath.isNotEmpty && report.isVoiceSynced;
 
-    return InkWell(
-      onTap: () => _openReport(report),
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.antiAlias,
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openReport(report),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: borderColor, width: 4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: thumb,
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(typeIcon, size: 48, color: typeColor),
-                    const SizedBox(height: 4),
-                    Text(
-                      DateFormat('HH:mm').format(report.timestamp.toLocal()),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+              Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: borderColor, width: 4),
+                        borderRadius: BorderRadius.circular(8),
                       ),
+                      child: thumb,
                     ),
-                  ],
-                ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(typeIcon, size: 44, color: typeColor),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('HH:mm')
+                              .format(report.timestamp.toLocal()),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (hasVoice)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.mic, size: 32, color: Colors.blue),
+                    ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: trailing,
-              ),
+              const SizedBox(height: 8),
+              _syncBadge(report),
             ],
           ),
         ),
@@ -978,7 +1096,10 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..userId = 'tl_1'
         ..mobileId = mobileId
         ..timestamp = DateTime.now()
-        ..status = 'pending';
+        ..status = 'local'
+        ..photoStatus = 'pending'
+        ..voiceStatus = 'pending'
+        ..dbStatus = 'pending';
       final savedId = await ReportLocalService.saveReport(report);
       debugPrint('SaveFlow: report persisted with Isar id=$savedId');
       if (!mounted) return;

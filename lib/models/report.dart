@@ -2,6 +2,9 @@ import 'package:isar_community/isar.dart';
 
 part 'report.g.dart';
 
+/// Semantic sync states derived from the report's status + sub-statuses.
+enum SyncState { local, uploading, synced, failed }
+
 /// A locally stored field report.
 ///
 /// [type] is one of: 'work', 'problem', or 'material'.
@@ -33,15 +36,48 @@ class Report {
   /// When the report was created.
   late DateTime timestamp;
 
-  /// Workflow status, defaulting to 'pending'.
+  /// Workflow status. One of: 'local', 'uploading', 'synced', 'failed'.
+  /// Legacy rows may carry 'pending' (treated as 'local').
   String status = 'pending';
 
   /// Remote (Supabase) row id once the report has been synced. Empty while
   /// pending. Reserved for future upsert/update flows.
   String supabaseId = '';
 
-  /// Convenience checks used by the sync engine. A 'failed' report stays
-  /// retryable — it is re-pushed on the next sync trigger.
-  bool get isSynced => status == 'synced';
-  bool get isRetryable => status == 'pending' || status == 'failed';
+  /// Sub-status tracking for partial/resilient sync.
+  /// Each is one of: 'pending', 'synced', 'failed'.
+  String photoStatus = 'pending';
+  String voiceStatus = 'pending';
+  String dbStatus = 'pending';
+
+  /// Cached public URLs returned by Supabase storage after a successful upload.
+  /// Persisted so a later partial-sync run can insert the row without re-uploading.
+  String photoUrl = '';
+  String voiceUrl = '';
+
+  /// True when the photo upload has been completed (local file uploaded).
+  bool get isPhotoSynced => photoStatus == 'synced';
+  bool get isVoiceSynced =>
+      voicePath.isEmpty || voiceStatus == 'synced';
+  bool get isDbSynced => dbStatus == 'synced';
+
+  /// A report is fully synced only when all three sub-pieces succeeded.
+  bool get isFullySynced =>
+      isPhotoSynced && isVoiceSynced && isDbSynced;
+
+  /// Retryable if it hasn't fully synced yet (covers local, failed, and
+  /// stale-uploading states left behind by a crash).
+  bool get isRetryable => !isFullySynced && status != 'uploading';
+
+  /// Convenience alias kept for call sites that read the legacy getter.
+  bool get isSynced => status == 'synced' && isFullySynced;
+
+  /// Semantic overall state derived from status + sub-statuses.
+  @ignore
+  SyncState get syncState {
+    if (isFullySynced) return SyncState.synced;
+    if (status == 'uploading') return SyncState.uploading;
+    if (status == 'failed') return SyncState.failed;
+    return SyncState.local;
+  }
 }

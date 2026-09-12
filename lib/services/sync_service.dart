@@ -56,8 +56,17 @@ class SyncService {
     return results.any((r) => r != ConnectivityResult.none);
   }
 
-  /// Uploads every pending report to Supabase. Returns the number of reports
-  /// that were successfully synced.
+  /// Retry (push) a single report — invoked from the History "tap to retry"
+  /// tap target. Returns true if the report reached a terminal state.
+  static Future<bool> retryReport(int reportId) async {
+    final report = await DatabaseService.getReportById(reportId);
+    if (report == null || report.isFullySynced) return true;
+    await _pushOne(report);
+    return report.isFullySynced || report.status == 'failed';
+  }
+
+  /// Uploads every retryable report to Supabase using partial/resilient
+  /// sync. Returns the number of reports that reached a terminal state.
   static Future<int> syncPendingReports() async {
     if (_syncing) return 0;
     if (!await isOnline()) {
@@ -65,68 +74,109 @@ class SyncService {
       return 0;
     }
     _syncing = true;
-    int syncedCount = 0;
+    int completedCount = 0;
     try {
+      // Reset any stale 'uploading' states left by a crash.
+      final reset = await DatabaseService.resetStaleUploading();
+      if (reset > 0) {
+        debugPrint('SyncFlow: reset $reset stale uploading report(s)');
+      }
+
       final pending = await DatabaseService.getRetryableReports();
       if (pending.isEmpty) return 0;
       debugPrint('SyncFlow: ${pending.length} retryable report(s) found');
       for (final report in pending) {
-        try {
-          // Upload the photo (always present) and voice note (optional).
-          final photoUrl = report.photoPath.isNotEmpty
-              ? await _upload('photo', report.photoPath, 'image/jpeg')
-              : '';
-          final voiceUrl = report.voicePath.isNotEmpty
-              ? await _upload('voice', report.voicePath, 'audio/mp4')
-              : '';
-
-          // Insert the metadata row and read back the generated remote id.
-          final inserted = await Supabase.instance.client
-              .from('reports')
-              .insert({
-                'local_id': report.id.toString(),
-                'type': report.type,
-                'photo_url': photoUrl,
-                'voice_url': voiceUrl,
-                'lat': report.lat,
-                'lng': report.lng,
-                'timestamp': report.timestamp.toUtc().toIso8601String(),
-                'user_id': report.userId,
-                'mobile_id': report.mobileId,
-              })
-              .select('id')
-              .single();
-          // Remember the remote row id for future update flows.
-          report.supabaseId = (inserted['id'] ?? '').toString();
-          debugPrint(
-            'SyncFlow: report ${report.id} inserted into Supabase '
-            '(remote id=${report.supabaseId})',
-          );
-
-          // Only now, after upload + insert both succeeded, mark it synced.
-          await DatabaseService.markSynced(report);
-          syncedCount++;
-        } catch (e, st) {
-          // Graceful failure handling: mark the report 'failed' (still
-          // retryable) so the UI reflects it, then decide whether to keep
-          // going. Connectivity problems abort the loop; per-report problems
-          // (e.g. a corrupt file) only skip that report.
-          debugPrint('SyncFlow: report ${report.id} failed: $e\n$st');
-          await DatabaseService.markFailed(report);
-          if (!await isOnline()) {
-            debugPrint('SyncFlow: network gone — aborting loop');
-            break;
-          }
+        if (report.isFullySynced) continue;
+        await _pushOne(report);
+        if (report.isFullySynced || report.status == 'failed') {
+          completedCount++;
+        }
+        if (!await isOnline()) {
+          debugPrint('SyncFlow: network gone — aborting loop');
+          break;
         }
       }
-      // Push and pull go hand in hand on a successful cycle.
-      await pullRemoteChanges();
     } catch (e, st) {
       debugPrint('SyncFlow: sync aborted: $e\n$st');
     } finally {
       _syncing = false;
     }
-    return syncedCount;
+    return completedCount;
+  }
+
+  /// Partial/resilient push of a single report. Each step persists its
+  /// sub-status immediately, so a crash keeps already-completed pieces and
+  /// the next run only uploads what's still pending.
+  static Future<void> _pushOne(Report report) async {
+    try {
+      await DatabaseService.markUploading(report);
+
+      // 1) Photo (skip if already synced).
+      if (report.photoStatus != 'synced' && report.photoPath.isNotEmpty) {
+        final url = await _upload('photo', report.photoPath, 'image/jpeg');
+        report.photoUrl = url;
+        report.photoStatus = 'synced';
+        await DatabaseService.saveSubStatus(report);
+        debugPrint('SyncFlow: report ${report.id} photo synced');
+      }
+
+      // 2) Voice (skip if none or already synced).
+      if (report.voicePath.isNotEmpty && report.voiceStatus != 'synced') {
+        final url = await _upload('voice', report.voicePath, 'audio/mp4');
+        report.voiceUrl = url;
+        report.voiceStatus = 'synced';
+        await DatabaseService.saveSubStatus(report);
+        debugPrint('SyncFlow: report ${report.id} voice synced');
+      }
+
+      // 3) DB row — only when media are in place.
+      if (report.isPhotoSynced && report.isVoiceSynced) {
+        if (report.dbStatus != 'synced') {
+          await _insertRow(report);
+          report.dbStatus = 'synced';
+          await DatabaseService.saveSubStatus(report);
+        }
+      }
+
+      // 4) All pieces done → fully synced.
+      if (report.isFullySynced) {
+        await DatabaseService.markSynced(report);
+        debugPrint('SyncFlow: report ${report.id} fully synced');
+      }
+    } catch (e, st) {
+      debugPrint('SyncFlow: report ${report.id} failed: $e\n$st');
+      await DatabaseService.markFailed(report);
+    }
+  }
+
+  /// Inserts (or upserts when supabaseId exists) the metadata row.
+  static Future<void> _insertRow(Report report) async {
+    final payload = {
+      'local_id': report.id.toString(),
+      'type': report.type,
+      'photo_url': report.photoUrl,
+      'voice_url': report.voiceUrl,
+      'lat': report.lat,
+      'lng': report.lng,
+      'timestamp': report.timestamp.toUtc().toIso8601String(),
+      'user_id': report.userId,
+      'mobile_id': report.mobileId,
+    };
+    final inserted = report.supabaseId.isNotEmpty
+        ? await Supabase.instance.client
+            .from('reports')
+            .upsert(payload)
+            .select('id')
+            .single()
+        : await Supabase.instance.client
+            .from('reports')
+            .insert(payload)
+            .select('id')
+            .single();
+    report.supabaseId = (inserted['id'] ?? '').toString();
+    debugPrint(
+      'SyncFlow: report ${report.id} row upserted (remote id=${report.supabaseId})',
+    );
   }
 
   /// Pull remote changes from Supabase newer than the last pull watermark
@@ -189,10 +239,14 @@ class SyncService {
   /// Creates a local Report from a remote Supabase row. A pulled row is
   /// 'synced' by definition; local file fields hold the remote public URLs.
   static Future<void> _upsertRemote(Map<String, dynamic> row) async {
+    final photoPath = (row['photo_url'] ?? '').toString();
+    final voicePath = (row['voice_url'] ?? '').toString();
     final report = Report()
       ..type = (row['type'] ?? 'work').toString()
-      ..photoPath = (row['photo_url'] ?? '').toString()
-      ..voicePath = (row['voice_url'] ?? '').toString()
+      ..photoPath = photoPath
+      ..voicePath = voicePath
+      ..photoUrl = photoPath
+      ..voiceUrl = voicePath
       ..lat = (row['lat'] as num?)?.toDouble() ?? 0.0
       ..lng = (row['lng'] as num?)?.toDouble() ?? 0.0
       ..userId = (row['user_id'] ?? 'tl_1').toString()
@@ -201,6 +255,9 @@ class SyncService {
           ? DateTime.parse(row['timestamp'].toString()).toLocal()
           : DateTime.now()
       ..status = 'synced'
+      ..photoStatus = 'synced'
+      ..voiceStatus = 'synced'
+      ..dbStatus = 'synced'
       ..supabaseId = (row['id'] ?? '').toString();
     await DatabaseService.saveReport(report);
     debugPrint('PullFlow: stored remote row (supabaseId=${report.supabaseId})');

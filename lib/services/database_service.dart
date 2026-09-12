@@ -51,34 +51,64 @@ class DatabaseService {
     }
   }
 
-  /// Retrieve all reports needing a sync attempt (pending or failed),
-  /// oldest first.
+  /// Retrieve all reports needing a sync attempt (local, failed, or stale
+  /// uploading from a crash), oldest first so the queue is FIFO.
   static Future<List<Report>> getRetryableReports() {
     return _isar.reports
         .filter()
-        .statusEqualTo('pending')
-        .or()
-        .statusEqualTo('failed')
+        .anyOf(
+          ['local', 'failed', 'uploading', 'pending'],
+          (q, s) => q.statusEqualTo(s),
+        )
         .sortByTimestamp()
         .findAll();
   }
 
+  /// Mark a report as currently uploading (UI shows the spinner).
+  static Future<void> markUploading(Report report) async {
+    report.status = 'uploading';
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint('DatabaseFlow: report ${report.id} marked uploading');
+  }
+
+  /// Persist incremental sub-status progress during a partial sync so a
+  /// crash keeps already-completed pieces.
+  static Future<void> saveSubStatus(Report report) async {
+    await _isar.writeTxn(() => _isar.reports.put(report));
+  }
+
+  /// Reset any 'uploading' reports (left by a crash) back to 'failed' so they
+  /// are retried on the next sync. Returns the count reset.
+  static Future<int> resetStaleUploading() async {
+    final stale = await _isar.reports
+        .filter()
+        .statusEqualTo('uploading')
+        .findAll();
+    for (final r in stale) {
+      r.status = 'failed';
+    }
+    if (stale.isNotEmpty) {
+      await _isar.writeTxn(() => _isar.reports.putAll(stale));
+    }
+    return stale.length;
+  }
+
   /// Mark a report as failed after an unsuccessful sync attempt. The report
-  /// stays retryable and is re-pushed on the next trigger.
+  /// stays retryable and is re-pushed on the next trigger. Sub-statuses of
+  /// already-completed pieces are preserved.
   static Future<void> markFailed(Report report) async {
     report.status = 'failed';
-    await _isar.writeTxn(
-      () => _isar.reports.put(report),
-    );
+    await _isar.writeTxn(() => _isar.reports.put(report));
     debugPrint('DatabaseFlow: report ${report.id} marked failed');
   }
 
-  /// Mark a report as synced (after a successful Supabase upload + insert).
+  /// Mark a report as fully synced — all three sub-pieces succeeded.
   static Future<void> markSynced(Report report) async {
     report.status = 'synced';
-    await _isar.writeTxn(
-      () => _isar.reports.put(report),
-    );
+    report.photoStatus = 'synced';
+    report.voiceStatus = 'synced';
+    report.dbStatus = 'synced';
+    await _isar.writeTxn(() => _isar.reports.put(report));
     debugPrint('DatabaseFlow: report ${report.id} marked synced');
   }
 
