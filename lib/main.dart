@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -316,6 +317,111 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  /// Day-group header ('TODAY', 'YESTERDAY', or a long date) for a local ts.
+  String _dayLabel(DateTime local) {
+    bool isSameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+    final now = DateTime.now();
+    if (isSameDay(local, now)) return 'TODAY';
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (isSameDay(local, yesterday)) return 'YESTERDAY';
+    return DateFormat('EEEE, d MMMM').format(local);
+  }
+
+  /// One glanceable report tile: 80x80 photo with a 4px traffic-light border,
+  /// a type icon + time in the middle, and an optional mic icon.
+  Widget _trafficCard(Report report) {
+    final Color borderColor = report.status == 'synced'
+        ? Colors.green
+        : report.status == 'failed'
+            ? Colors.red
+            : Colors.yellow;
+    final bool hasPhoto =
+        report.photoPath.isNotEmpty && File(report.photoPath).existsSync();
+    final Widget thumb = hasPhoto
+        ? Image.file(
+            File(report.photoPath),
+            width: 80,
+            height: 80,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 80,
+              height: 80,
+              color: Colors.grey.shade300,
+              child: const Icon(Icons.broken_image, size: 32),
+            ),
+          )
+        : Container(
+            width: 80,
+            height: 80,
+            color: Colors.grey.shade200,
+            child: const Icon(Icons.image_not_supported, size: 32),
+          );
+    final IconData typeIcon = switch (report.type) {
+      'work' => Icons.check_circle,
+      'problem' => Icons.warning,
+      _ => Icons.inventory_2,
+    };
+    final Color typeColor = switch (report.type) {
+      'work' => Colors.green,
+      'problem' => Colors.red,
+      _ => Colors.yellow.shade700,
+    };
+    final Widget trailing = report.voicePath.isNotEmpty
+        ? Icon(Icons.mic, size: 36, color: Colors.blue)
+        : const SizedBox(width: 1);
+
+    return InkWell(
+      onTap: () => _openReport(report),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: borderColor, width: 4),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: thumb,
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(typeIcon, size: 48, color: typeColor),
+                    const SizedBox(height: 4),
+                    Text(
+                      DateFormat('HH:mm').format(report.timestamp.toLocal()),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: trailing,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -328,62 +434,64 @@ class _HistoryScreenState extends State<HistoryScreen>
           }
           final reports = snapshot.data ?? const <Report>[];
           if (reports.isEmpty) {
-            return const Center(child: Text('No reports yet'));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: reports.length,
-            itemBuilder: (context, index) {
-              final report = reports[index];
-              final Color borderColor = report.status == 'synced'
-                  ? Colors.green
-                  : report.status == 'failed'
-                      ? Colors.red
-                      : Colors.yellow;
-              return InkWell(
-                onTap: () => _openReport(report),
-                child: Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: borderColor, width: 3),
+            // Bold, zero-reading empty state.
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shield, size: 140, color: Colors.deepPurple),
+                  SizedBox(height: 16),
+                  Text(
+                    'No reports yet.\nYour work will be protected here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Image.file(
-                        File(report.photoPath),
-                        height: 160,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            Container(
-                              height: 160,
-                              color: Colors.grey.shade300,
-                              child: const Icon(Icons.broken_image, size: 48),
-                            ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              formatTimestamp(report.timestamp.toLocal()),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text('Lat: ${report.lat}, Lng: ${report.lng}'),
-                          ],
-                        ),
-                      ),
-                    ],
+                ],
+              ),
+            );
+          }
+
+          // Group the (already newest-first) list by day, preserving order.
+          final headers = <String>[];
+          final byDay = <String, List<Report>>{};
+          for (final report in reports) {
+            final label = _dayLabel(report.timestamp.toLocal());
+            if (!byDay.containsKey(label)) {
+              byDay[label] = <Report>[];
+              headers.add(label);
+            }
+            byDay[label]!.add(report);
+          }
+
+          // Flatten into header + tile entries for a single ListView.
+          final entries = <Widget>[];
+          for (final label in headers) {
+            entries.add(
+              Padding(
+                padding: const EdgeInsets.only(top: 12, left: 4, right: 4),
+                child: Text(
+                  label.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    color: Colors.deepPurple,
                   ),
                 ),
-              );
-            },
+              ),
+            );
+            for (final report in byDay[label]!) {
+              entries.add(_trafficCard(report));
+            }
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(8),
+            itemCount: entries.length,
+            itemBuilder: (context, index) => entries[index],
           );
         },
       ),
