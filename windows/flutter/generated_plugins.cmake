@@ -3,10 +3,14 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   audioplayers_windows
+  connectivity_plus
   file_selector_windows
+  geolocator_windows
   isar_community_flutter_libs
   record_windows
+  url_launcher_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

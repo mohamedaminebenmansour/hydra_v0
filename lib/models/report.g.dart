@@ -17,22 +17,34 @@ const ReportSchema = CollectionSchema(
   name: r'Report',
   id: 4107730612455750309,
   properties: {
-    r'lat': PropertySchema(id: 0, name: r'lat', type: IsarType.double),
-    r'lng': PropertySchema(id: 1, name: r'lng', type: IsarType.double),
+    r'isSynced': PropertySchema(id: 0, name: r'isSynced', type: IsarType.bool),
+    r'lat': PropertySchema(id: 1, name: r'lat', type: IsarType.double),
+    r'lng': PropertySchema(id: 2, name: r'lng', type: IsarType.double),
+    r'mobileId': PropertySchema(
+      id: 3,
+      name: r'mobileId',
+      type: IsarType.string,
+    ),
     r'photoPath': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'photoPath',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 3, name: r'status', type: IsarType.string),
+    r'status': PropertySchema(id: 5, name: r'status', type: IsarType.string),
+    r'supabaseId': PropertySchema(
+      id: 6,
+      name: r'supabaseId',
+      type: IsarType.string,
+    ),
     r'timestamp': PropertySchema(
-      id: 4,
+      id: 7,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
-    r'type': PropertySchema(id: 5, name: r'type', type: IsarType.string),
+    r'type': PropertySchema(id: 8, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 9, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 6,
+      id: 10,
       name: r'voicePath',
       type: IsarType.string,
     ),
@@ -59,9 +71,12 @@ int _reportEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.mobileId.length * 3;
   bytesCount += 3 + object.photoPath.length * 3;
   bytesCount += 3 + object.status.length * 3;
+  bytesCount += 3 + object.supabaseId.length * 3;
   bytesCount += 3 + object.type.length * 3;
+  bytesCount += 3 + object.userId.length * 3;
   bytesCount += 3 + object.voicePath.length * 3;
   return bytesCount;
 }
@@ -72,13 +87,17 @@ void _reportSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDouble(offsets[0], object.lat);
-  writer.writeDouble(offsets[1], object.lng);
-  writer.writeString(offsets[2], object.photoPath);
-  writer.writeString(offsets[3], object.status);
-  writer.writeDateTime(offsets[4], object.timestamp);
-  writer.writeString(offsets[5], object.type);
-  writer.writeString(offsets[6], object.voicePath);
+  writer.writeBool(offsets[0], object.isSynced);
+  writer.writeDouble(offsets[1], object.lat);
+  writer.writeDouble(offsets[2], object.lng);
+  writer.writeString(offsets[3], object.mobileId);
+  writer.writeString(offsets[4], object.photoPath);
+  writer.writeString(offsets[5], object.status);
+  writer.writeString(offsets[6], object.supabaseId);
+  writer.writeDateTime(offsets[7], object.timestamp);
+  writer.writeString(offsets[8], object.type);
+  writer.writeString(offsets[9], object.userId);
+  writer.writeString(offsets[10], object.voicePath);
 }
 
 Report _reportDeserialize(
@@ -89,13 +108,16 @@ Report _reportDeserialize(
 ) {
   final object = Report();
   object.id = id;
-  object.lat = reader.readDouble(offsets[0]);
-  object.lng = reader.readDouble(offsets[1]);
-  object.photoPath = reader.readString(offsets[2]);
-  object.status = reader.readString(offsets[3]);
-  object.timestamp = reader.readDateTime(offsets[4]);
-  object.type = reader.readString(offsets[5]);
-  object.voicePath = reader.readString(offsets[6]);
+  object.lat = reader.readDouble(offsets[1]);
+  object.lng = reader.readDouble(offsets[2]);
+  object.mobileId = reader.readString(offsets[3]);
+  object.photoPath = reader.readString(offsets[4]);
+  object.status = reader.readString(offsets[5]);
+  object.supabaseId = reader.readString(offsets[6]);
+  object.timestamp = reader.readDateTime(offsets[7]);
+  object.type = reader.readString(offsets[8]);
+  object.userId = reader.readString(offsets[9]);
+  object.voicePath = reader.readString(offsets[10]);
   return object;
 }
 
@@ -107,18 +129,26 @@ P _reportDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 1:
       return (reader.readDouble(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 3:
       return (reader.readString(offset)) as P;
     case 4:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 5:
       return (reader.readString(offset)) as P;
     case 6:
+      return (reader.readString(offset)) as P;
+    case 7:
+      return (reader.readDateTime(offset)) as P;
+    case 8:
+      return (reader.readString(offset)) as P;
+    case 9:
+      return (reader.readString(offset)) as P;
+    case 10:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -273,6 +303,16 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterFilterCondition> isSyncedEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isSynced', value: value),
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterFilterCondition> latEqualTo(
     double value, {
     double epsilon = Query.epsilon,
@@ -417,6 +457,152 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
 
           epsilon: epsilon,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'mobileId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'mobileId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'mobileId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'mobileId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> mobileIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'mobileId', value: ''),
       );
     });
   }
@@ -713,6 +899,152 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'supabaseId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'supabaseId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'supabaseId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'supabaseId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> supabaseIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'supabaseId', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterFilterCondition> timestampEqualTo(
     DateTime value,
   ) {
@@ -918,6 +1250,152 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'userId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'userId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'userId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'userId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> userIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'userId', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterFilterCondition> voicePathEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -1070,6 +1548,18 @@ extension ReportQueryObject on QueryBuilder<Report, Report, QFilterCondition> {}
 extension ReportQueryLinks on QueryBuilder<Report, Report, QFilterCondition> {}
 
 extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
+  QueryBuilder<Report, Report, QAfterSortBy> sortByIsSynced() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isSynced', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByIsSyncedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isSynced', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByLat() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lat', Sort.asc);
@@ -1091,6 +1581,18 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
   QueryBuilder<Report, Report, QAfterSortBy> sortByLngDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lng', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByMobileId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mobileId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByMobileIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mobileId', Sort.desc);
     });
   }
 
@@ -1118,6 +1620,18 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> sortBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.asc);
@@ -1139,6 +1653,18 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
   QueryBuilder<Report, Report, QAfterSortBy> sortByTypeDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'type', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByUserId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByUserIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.desc);
     });
   }
 
@@ -1168,6 +1694,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByIsSynced() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isSynced', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByIsSyncedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isSynced', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByLat() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lat', Sort.asc);
@@ -1189,6 +1727,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
   QueryBuilder<Report, Report, QAfterSortBy> thenByLngDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lng', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByMobileId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mobileId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByMobileIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mobileId', Sort.desc);
     });
   }
 
@@ -1216,6 +1766,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenBySupabaseId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenBySupabaseIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'supabaseId', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.asc);
@@ -1240,6 +1802,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByUserId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByUserIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'userId', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByVoicePath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'voicePath', Sort.asc);
@@ -1254,6 +1828,12 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
 }
 
 extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
+  QueryBuilder<Report, Report, QDistinct> distinctByIsSynced() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isSynced');
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByLat() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'lat');
@@ -1263,6 +1843,14 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
   QueryBuilder<Report, Report, QDistinct> distinctByLng() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'lng');
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByMobileId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'mobileId', caseSensitive: caseSensitive);
     });
   }
 
@@ -1282,6 +1870,14 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctBySupabaseId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'supabaseId', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'timestamp');
@@ -1293,6 +1889,14 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'type', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByUserId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'userId', caseSensitive: caseSensitive);
     });
   }
 
@@ -1312,6 +1916,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
     });
   }
 
+  QueryBuilder<Report, bool, QQueryOperations> isSyncedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isSynced');
+    });
+  }
+
   QueryBuilder<Report, double, QQueryOperations> latProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'lat');
@@ -1321,6 +1931,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, double, QQueryOperations> lngProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'lng');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> mobileIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mobileId');
     });
   }
 
@@ -1336,6 +1952,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
     });
   }
 
+  QueryBuilder<Report, String, QQueryOperations> supabaseIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'supabaseId');
+    });
+  }
+
   QueryBuilder<Report, DateTime, QQueryOperations> timestampProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'timestamp');
@@ -1345,6 +1967,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, String, QQueryOperations> typeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'type');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> userIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'userId');
     });
   }
 

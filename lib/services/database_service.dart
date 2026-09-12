@@ -41,12 +41,45 @@ class DatabaseService {
         () => _isar.reports.put(report),
       );
       debugPrint('DatabaseFlow: report saved '
-          '(id=$id, photo=${report.photoPath}, voice=${report.voicePath})');
+          '(id=$id, photo=${report.photoPath}, voice=${report.voicePath}, '
+          'lat=${report.lat}, lng=${report.lng}, '
+          'userId=${report.userId}, mobileId=${report.mobileId})');
       return id;
     } catch (e, st) {
       debugPrint('DatabaseFlow: writeTxn/put failed: $e\n$st');
       rethrow;
     }
+  }
+
+  /// Retrieve all reports needing a sync attempt (pending or failed),
+  /// oldest first.
+  static Future<List<Report>> getRetryableReports() {
+    return _isar.reports
+        .filter()
+        .statusEqualTo('pending')
+        .or()
+        .statusEqualTo('failed')
+        .sortByTimestamp()
+        .findAll();
+  }
+
+  /// Mark a report as failed after an unsuccessful sync attempt. The report
+  /// stays retryable and is re-pushed on the next trigger.
+  static Future<void> markFailed(Report report) async {
+    report.status = 'failed';
+    await _isar.writeTxn(
+      () => _isar.reports.put(report),
+    );
+    debugPrint('DatabaseFlow: report ${report.id} marked failed');
+  }
+
+  /// Mark a report as synced (after a successful Supabase upload + insert).
+  static Future<void> markSynced(Report report) async {
+    report.status = 'synced';
+    await _isar.writeTxn(
+      () => _isar.reports.put(report),
+    );
+    debugPrint('DatabaseFlow: report ${report.id} marked synced');
   }
 
   /// Retrieve a single report by its Isar id.

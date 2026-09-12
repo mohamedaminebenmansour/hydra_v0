@@ -2,18 +2,28 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models/report.dart';
 import 'services/database_service.dart';
+import 'services/report_local_service.dart';
+import 'services/sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://yprnwybpteelfhcorwib.supabase.co',
+    publishableKey: 'sb_publishable_zzeNiixC5aau8lhM8GtU6g_6GdDRPex',
+  );
   await DatabaseService.init();
+  await SyncService.init(); // background push on reconnect + initial pull
   runApp(const HydraApp());
 }
 
@@ -42,6 +52,30 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
+
+  /// True while a cloud sync is in flight (spinner shown in the app bar).
+  bool _syncing = false;
+
+  /// Triggers a Supabase sync of all pending reports.
+  Future<void> _sync() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final synced = await SyncService.syncPendingReports();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Synced $synced report(s)')),
+      );
+    } catch (e, st) {
+      debugPrint('SyncFlow: sync failed: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sync failed — check connection')),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
 
   /// Catch any button tap: immediately open the camera, compress the capture,
   /// then open the Save Report screen (voice note + confirm).
@@ -82,41 +116,20 @@ class _HomeScreenState extends State<HomeScreen> {
         } else {
           debugPrint(
             'ImageFlow: compressAndGetFile returned null '
-            'for $savedPath — falling back to raw copy',
+            'for $savedPath — falling back to persistent copy',
           );
-          storedPath = savedPath;
-          try {
-            await File(photo.path).copy(savedPath);
-          } catch (e, st) {
-            debugPrint('ImageFlow: raw copy fallback failed: $e\n$st');
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Could not store photo')),
-            );
-            return;
-          }
+          storedPath =
+              await ReportLocalService.persistMedia(photo.path, 'photo');
         }
       } catch (e, st) {
-        // Compression unavailable: fall back to saving the raw capture.
+        // Compression unavailable: fall back to a persistent raw copy.
         debugPrint('ImageFlow: compression threw, using raw copy: $e\n$st');
-        try {
-          storedPath = savedPath;
-          await File(photo.path).copy(savedPath);
-        } catch (e2, st2) {
-          debugPrint('ImageFlow: raw copy fallback failed: $e2\n$st2');
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not store photo')),
-          );
-          return;
-        }
+        storedPath = await ReportLocalService.persistMedia(photo.path, 'photo');
       }
 
       // Never navigate with a photo path that does not point at a real,
       // non-empty file — otherwise the save step would persist a broken path.
-      if (storedPath.isEmpty ||
-          !File(storedPath).existsSync() ||
-          File(storedPath).lengthSync() == 0) {
+      if (!await ReportLocalService.isValidFile(storedPath)) {
         debugPrint('ImageFlow: stored photo invalid: "$storedPath"');
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -153,6 +166,26 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Hydra'),
+        actions: [
+          if (_syncing)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: 'Sync to cloud',
+              onPressed: _sync,
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -296,7 +329,9 @@ class _HistoryScreenState extends State<HistoryScreen>
               final report = reports[index];
               final Color borderColor = report.status == 'synced'
                   ? Colors.green
-                  : Colors.yellow;
+                  : report.status == 'failed'
+                      ? Colors.red
+                      : Colors.yellow;
               return InkWell(
                 onTap: () => _openReport(report),
                 child: Card(
@@ -614,6 +649,31 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       _saving = true;
     });
     try {
+      // GPS position: 0.0 on permission denial / failure / no provider.
+      double lat = 0.0;
+      double lng = 0.0;
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings:
+              const LocationSettings(accuracy: LocationAccuracy.high),
+        );
+        lat = pos.latitude;
+        lng = pos.longitude;
+        debugPrint('LocationFlow: position acquired lat=$lat lng=$lng');
+      } catch (e, st) {
+        debugPrint('LocationFlow: position failed, using 0.0: $e\n$st');
+      }
+
+      // Device model as mobileId, e.g. "samsung SM-A035F".
+      String mobileId = '';
+      try {
+        final info = await DeviceInfoPlugin().androidInfo;
+        mobileId = '${info.manufacturer} ${info.model}'.trim();
+        debugPrint('DeviceFlow: mobileId="$mobileId"');
+      } catch (e, st) {
+        debugPrint('DeviceFlow: androidInfo failed: $e\n$st');
+      }
+
       // Re-validate the voice file at save time: if the recording was
       // interrupted (e.g. app backgrounded and lost focus), the file may not
       // exist or may be empty. Save a photo-only report rather than a broken
@@ -646,17 +706,22 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..type = widget.type
         ..photoPath = widget.photoPath
         ..voicePath = currentVoicePath ?? ''
-        ..lat = 0.0
-        ..lng = 0.0
+        ..lat = lat
+        ..lng = lng
+        ..userId = 'tl_1'
+        ..mobileId = mobileId
         ..timestamp = DateTime.now()
         ..status = 'pending';
-      final savedId = await DatabaseService.saveReport(report);
+      final savedId = await ReportLocalService.saveReport(report);
       debugPrint('SaveFlow: report persisted with Isar id=$savedId');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Saved Locally')));
       Navigator.of(context).pop();
+      // Offline-first: attempt an immediate background push of the new
+      // report (no-ops offline; auto-retries on connectivity restore).
+      unawaited(SyncService.syncPendingReports());
     } catch (e, st) {
       debugPrint('SaveFlow: Isar saveReport failed: $e\n$st');
       if (!mounted) return;

@@ -12,6 +12,12 @@ class Report {
   /// The kind of report: 'work', 'problem', or 'material'.
   String type = 'work';
 
+  /// Identifier of the reporting user (default team lead account).
+  String userId = 'tl_1';
+
+  /// Device model captured at save time, e.g. "samsung SM-A035F".
+  String mobileId = '';
+
   /// Path to the captured photo on the local filesystem.
   String photoPath = '';
 
@@ -29,4 +35,13 @@ class Report {
 
   /// Workflow status, defaulting to 'pending'.
   String status = 'pending';
+
+  /// Remote (Supabase) row id once the report has been synced. Empty while
+  /// pending. Reserved for future upsert/update flows.
+  String supabaseId = '';
+
+  /// Convenience checks used by the sync engine. A 'failed' report stays
+  /// retryable — it is re-pushed on the next sync trigger.
+  bool get isSynced => status == 'synced';
+  bool get isRetryable => status == 'pending' || status == 'failed';
 }
