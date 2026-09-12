@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,13 @@ import 'models/report.dart';
 import 'services/database_service.dart';
 import 'services/report_local_service.dart';
 import 'services/sync_service.dart';
+
+/// Formats a timestamp as 'YYYY-MM-DD HH:mm:ss' in local time.
+String formatTimestamp(DateTime t) {
+  String p2(int v) => v.toString().padLeft(2, '0');
+  return '${t.year}-${p2(t.month)}-${p2(t.day)} '
+      '${p2(t.hour)}:${p2(t.minute)}:${p2(t.second)}';
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -357,7 +365,19 @@ class _HistoryScreenState extends State<HistoryScreen>
                       ),
                       Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(report.timestamp.toLocal().toString()),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              formatTimestamp(report.timestamp.toLocal()),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text('Lat: ${report.lat}, Lng: ${report.lng}'),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -649,17 +669,33 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       _saving = true;
     });
     try {
-      // GPS position: 0.0 on permission denial / failure / no provider.
+      // GPS position: 0.0 on disabled services, denied permission, or
+      // failure. The OS permission dialog is only shown when needed.
       double lat = 0.0;
       double lng = 0.0;
       try {
-        final pos = await Geolocator.getCurrentPosition(
-          locationSettings:
-              const LocationSettings(accuracy: LocationAccuracy.high),
-        );
-        lat = pos.latitude;
-        lng = pos.longitude;
-        debugPrint('LocationFlow: position acquired lat=$lat lng=$lng');
+        if (!await Geolocator.isLocationServiceEnabled()) {
+          debugPrint('LocationFlow: location services disabled — using 0.0');
+        } else {
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.denied ||
+              permission == LocationPermission.deniedForever) {
+            debugPrint('LocationFlow: permission=$permission — using 0.0');
+          } else {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                timeLimit: Duration(seconds: 10),
+              ),
+            );
+            lat = pos.latitude;
+            lng = pos.longitude;
+            debugPrint('LocationFlow: position acquired lat=$lat lng=$lng');
+          }
+        }
       } catch (e, st) {
         debugPrint('LocationFlow: position failed, using 0.0: $e\n$st');
       }
@@ -878,6 +914,22 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     return '$m:$s';
   }
 
+  /// Opens the report's GPS coordinates in the external maps launcher.
+  Future<void> _openInMaps() async {
+    final lat = _report.lat;
+    final lng = _report.lng;
+    if (lat == 0 && lng == 0) return;
+    try {
+      // Google Maps query URL, opened in the system browser/maps app.
+      await launchUrl(
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng'),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (e, st) {
+      debugPrint('MapFlow: open failed: $e\n$st');
+    }
+  }
+
   /// Toggle playback. Creates (once) and subscribes to a persistent player so
   /// the UI can animate while audio is active and reset when it finishes.
   Future<void> _togglePlay() async {
@@ -1012,6 +1064,49 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                       ),
                     ],
                   ),
+Card(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            formatTimestamp(latest.timestamp.toLocal()),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Lat: ${latest.lat}, Lng: ${latest.lng}',
+                          ),
+                        ),
+                        if (latest.lat != 0 || latest.lng != 0)
+                          IconButton(
+                            icon: const Icon(Icons.map),
+                            tooltip: 'Open in Maps',
+                            onPressed: _openInMaps,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             );
           },
