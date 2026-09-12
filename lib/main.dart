@@ -172,27 +172,85 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Opens a compact bottom sheet with the sync status.
+  void _openSyncStatus(BuildContext context, int pendingCount) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                pendingCount == 0 ? Icons.cloud_done : Icons.cloud_upload,
+                size: 64,
+                color: pendingCount == 0 ? Colors.green : Colors.amber.shade700,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                pendingCount == 0
+                    ? 'All reports synced'
+                    : '$pendingCount report(s) waiting to sync',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: pendingCount == 0 ? null : () => _sync(),
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Sync now'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Hydra'),
         actions: [
-          if (_syncing)
-            const Padding(
-              padding: EdgeInsets.all(14),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.sync),
-              tooltip: 'Sync to cloud',
-              onPressed: _sync,
-            ),
+          StreamBuilder<int>(
+            stream: DatabaseService.watchPendingCount(),
+            builder: (context, snapshot) {
+              final pending = snapshot.data ?? 0;
+              if (_syncing) {
+                return const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                );
+              }
+              return IconButton(
+                icon: Badge.count(
+                  count: pending,
+                  isLabelVisible: pending > 0,
+                  child: Icon(
+                    pending == 0 ? Icons.cloud_done : Icons.cloud_upload,
+                    color: pending == 0 ? Colors.white : Colors.amber.shade300,
+                  ),
+                ),
+                tooltip: pending == 0 ? 'All synced' : 'Sync to cloud',
+                onPressed: () => _openSyncStatus(context, pending),
+              );
+            },
+          ),
         ],
       ),
       body: SafeArea(
@@ -201,8 +259,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: _ActionButton(
                 label: 'WORK',
-                color: Colors.green,
-                icon: Icons.check_circle,
+                color: Colors.blue,
+                icon: Icons.handyman,
                 iconColor: Colors.white,
                 onTap: () => _onTap('work'),
               ),
@@ -211,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _ActionButton(
                 label: 'PROBLEM',
                 color: Colors.red,
-                icon: Icons.warning,
+                icon: Icons.warning_amber_rounded,
                 iconColor: Colors.white,
                 onTap: () => _onTap('problem'),
               ),
@@ -219,9 +277,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: _ActionButton(
                 label: 'MATERIAL',
-                color: Colors.yellow.shade600,
-                icon: Icons.inventory,
-                iconColor: Colors.black,
+                color: Colors.amber.shade600,
+                icon: Icons.inventory_2,
+                iconColor: Colors.white,
                 onTap: () => _onTap('material'),
               ),
             ),
@@ -275,6 +333,31 @@ class _ActionButton extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A bold circular back button used on every detail / creation screen.
+class BackButtonCircle extends StatelessWidget {
+  const BackButtonCircle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.35),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => Navigator.of(context).maybePop(),
+          child: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(Icons.arrow_back, size: 28, color: Colors.white),
           ),
         ),
       ),
@@ -523,8 +606,15 @@ class _SaveReportScreenState extends State<SaveReportScreen>
   /// True while the microphone is actively recording.
   bool isRecording = false;
 
+  /// Seconds elapsed in the current recording (drives the live counter).
+  int _recordSeconds = 0;
+  Timer? _recordTicker;
+
   /// Path of the voice note being/already recorded (null until recorded).
   String? currentVoicePath;
+
+  /// True once a voice note has been recorded (enables Re-record).
+  bool _hasRecording = false;
 
   Timer? _autoStopTimer;
   bool _saving = false;
@@ -559,6 +649,8 @@ class _SaveReportScreenState extends State<SaveReportScreen>
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
     _pulseController.dispose();
+    _recordTicker?.cancel();
+    _recordTicker = null;
     // Always stop an active recording before disposing the recorder, so the
     // native encoder finalizes the file instead of crashing (MPEG4Writer).
     // Fire-and-forget: dispose() cannot be async.
@@ -669,9 +761,15 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       if (!mounted) return;
       setState(() {
         isRecording = true;
+        _recordSeconds = 0;
         currentVoicePath = path;
       });
       _pulseController.repeat(reverse: true);
+      // Live recording counter.
+      _recordTicker = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => setState(() => _recordSeconds++),
+      );
       // Stop automatically after 15 seconds.
       _autoStopTimer = Timer(const Duration(seconds: 15), _stopRecording);
     } catch (e, st) {
@@ -689,6 +787,8 @@ class _SaveReportScreenState extends State<SaveReportScreen>
   Future<void> _stopRecording() async {
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
+    _recordTicker?.cancel();
+    _recordTicker = null;
     if (_stopping || !isRecording) return;
     _stopping = true;
     _stopCompleter = Completer<void>();
@@ -724,6 +824,7 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         // Otherwise clean up so nothing broken is persisted.
         if (stoppedValid) {
           currentVoicePath = stoppedPath;
+          _hasRecording = true;
         } else if (fallbackValid) {
           // Keep the started path (already set) — stop() returned nothing
           // useful but the started file is intact.
@@ -731,6 +832,7 @@ class _SaveReportScreenState extends State<SaveReportScreen>
             'RecordFlow: stop() path invalid, keeping started '
             'voice file: "$currentVoicePath"',
           );
+          _hasRecording = true;
         } else {
           debugPrint(
             'RecordFlow: no valid voice file after stop '
@@ -747,6 +849,7 @@ class _SaveReportScreenState extends State<SaveReportScreen>
             }
           }
           currentVoicePath = null;
+          _hasRecording = false;
         }
       });
     } catch (e, st) {
@@ -754,12 +857,32 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       if (!mounted) return;
       setState(() {
         isRecording = false;
+        _hasRecording = false;
       });
     } finally {
       _stopping = false;
       _stopCompleter?.complete();
       _stopCompleter = null;
     }
+  }
+
+  /// Discard the current voice note and start a fresh recording.
+  Future<void> _reRecord() async {
+    final old = currentVoicePath;
+    setState(() {
+      currentVoicePath = null;
+      _hasRecording = false;
+      _recordSeconds = 0;
+    });
+    if (old != null && old.isNotEmpty) {
+      try {
+        final f = File(old);
+        if (f.existsSync()) f.deleteSync();
+      } catch (e, st) {
+        debugPrint('RecordFlow: re-record cleanup failed: $e\n$st');
+      }
+    }
+    await _onMicTap();
   }
 
   Future<void> _save() async {
@@ -878,14 +1001,24 @@ class _SaveReportScreenState extends State<SaveReportScreen>
     }
   }
 
+  String _fmtSecs(int s) {
+    final m = (s ~/ 60).toString();
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$m:$ss';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Save Report')),
+      appBar: AppBar(
+        leading: const BackButtonCircle(),
+        title: const Text('Save Report'),
+      ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
+              flex: 3,
               child: Image.file(
                 File(widget.photoPath),
                 fit: BoxFit.contain,
@@ -895,70 +1028,173 @@ class _SaveReportScreenState extends State<SaveReportScreen>
                 ),
               ),
             ),
-            Row(
-              children: [
-                // Mic button with a continuous pulse while recording.
-                Expanded(
-                  child: Material(
-                    color: Colors.red,
-                    child: InkWell(
-                      onTap: _onMicTap,
-                      child: SizedBox(
-                        height: 160,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AnimatedBuilder(
-                              animation: _pulseController,
-                              builder: (context, child) {
-                                final t = Curves.easeInOut.transform(
-                                  _pulseController.value,
-                                );
-                                return Transform.scale(
-                                  scale: 1.0 + (0.15 * t),
-                                  child: Icon(
-                                    isRecording ? Icons.stop : Icons.mic,
-                                    size: 80,
-                                    color: Color.lerp(
-                                      Colors.white,
-                                      Colors.white10,
-                                      t,
+            // Mic zone: ripple rings while recording, re-record pill after.
+            Expanded(
+              flex: 2,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                color: isRecording ? Colors.red.shade700 : Colors.grey.shade900,
+                width: double.infinity,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (isRecording) ...[
+                      SizedBox(
+                        height: 180,
+                        child: Center(
+                          child: AnimatedBuilder(
+                            animation: _pulseController,
+                            builder: (context, _) {
+                              final t = Curves.easeInOut
+                                  .transform(_pulseController.value);
+                              return SizedBox(
+                                width: 180,
+                                height: 180,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 80 + 80 * t,
+                                      height: 80 + 80 * t,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.15 * (1 - t)),
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              isRecording ? 'RECORDING' : 'VOICE',
-                              style: const TextStyle(
+                                    Container(
+                                      width: 60 + 40 * t,
+                                      height: 60 + 40 * t,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.18 * (1 - t)),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: _stopRecording,
+                                      child: CircleAvatar(
+                                        radius: 44,
+                                        backgroundColor: Colors.white,
+                                        child: Icon(Icons.stop, size: 56,
+                                            color: Colors.red.shade700),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _fmtSecs(_recordSeconds),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const Text(
+                        'TAP TO STOP',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ] else ...[
+                      InkWell(
+                        onTap: _onMicTap,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircleAvatar(
+                              radius: 48,
+                              backgroundColor: _hasRecording
+                                  ? Colors.blue.shade700
+                                  : Colors.white24,
+                              child: Icon(
+                                _hasRecording ? Icons.mic : Icons.mic_none,
+                                size: 56,
                                 color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _hasRecording ? 'VOICE OK' : 'ADD VOICE NOTE',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            if (_hasRecording) ...[
+                              const SizedBox(height: 16),
+                              TextButton.icon(
+                                onPressed: _reRecord,
+                                icon: const Icon(Icons.replay,
+                                    color: Colors.white70, size: 20),
+                                label: const Text(
+                                  'Re-record',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            // Giant green DONE button at the bottom.
+            SizedBox(
+              height: 120,
+              child: Material(
+                color: Colors.green,
+                child: InkWell(
+                  onTap: () => _save(),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle,
+                            size: 56,
+                            color: _hasRecording
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.85)),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'DONE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                Expanded(
-                  child: _ActionButton(
-                    label: 'SAVE',
-                    color: Colors.green,
-                    icon: Icons.check,
-                    iconColor: Colors.white,
-                    onTap: () => _save(),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
+
+
 }
 
 /// Shows a single Report with the photo and a play button for its voice note.
@@ -1105,7 +1341,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Report')),
+      appBar: AppBar(
+        leading: const BackButtonCircle(),
+        title: const Text('Report'),
+      ),
       body: SafeArea(
         child: FutureBuilder<Report?>(
           future: _reportFuture,

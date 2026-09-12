@@ -92,6 +92,18 @@ class DatabaseService {
     return _isar.reports.where().sortByTimestampDesc().findAll();
   }
 
+  /// Live stream of the count of pending-or-failed reports. Used by the sync
+  /// badge to show an amber count when work is queued.
+  static Stream<int> watchPendingCount() {
+    return _isar.reports
+        .filter()
+        .statusEqualTo('pending')
+        .or()
+        .statusEqualTo('failed')
+        .watch(fireImmediately: true)
+        .map((list) => list.length);
+  }
+
   /// Live-sorted stream of all reports (newest first). Emits immediately and
   /// on every Isar write, so list screens update without manual reloads.
   static Stream<List<Report>> watchAllReports() {
