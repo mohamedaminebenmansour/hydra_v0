@@ -16,6 +16,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models/report.dart';
 import 'services/database_service.dart';
+import 'services/notification_service.dart';
 import 'services/report_local_service.dart';
 import 'services/sync_service.dart';
 
@@ -38,6 +39,7 @@ Future<void> main() async {
   );
   await DatabaseService.init();
   await SyncService.init(); // background push on reconnect + initial pull
+  await NotificationService.init(); // daily 07:00 local reminder
   runApp(const HydraApp());
 }
 
