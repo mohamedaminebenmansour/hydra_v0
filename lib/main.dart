@@ -11,12 +11,17 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models/report.dart';
 import 'services/database_service.dart';
 import 'services/report_local_service.dart';
 import 'services/sync_service.dart';
+
+/// SharedPreferences key holding the last time the History screen was opened.
+/// Owner updates newer than this drive the red badge on the History FAB.
+const String _historyLastOpenedKey = 'historyLastOpenedAtMs';
 
 /// Formats a timestamp as 'YYYY-MM-DD HH:mm:ss' in local time.
 String formatTimestamp(DateTime t) {
@@ -64,6 +69,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// True while a cloud sync is in flight (spinner shown in the app bar).
   bool _syncing = false;
+
+  /// Fresh owner updates (changed after last History open, within 24h).
+  /// Drives the red badge on the History FAB.
+  int _freshOwnerUpdates = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    checkOwnerUpdates();
+  }
+
+  /// Smart Pull-on-Open: pull the owner's decisions from Supabase (when
+  /// online) and refresh the red badge count with setState.
+  Future<void> checkOwnerUpdates() async {
+    await SyncService.checkOwnerUpdates();
+    await _refreshOwnerBadge();
+  }
+
+  /// Recomputes the fresh-owner-update count (changed after the last History
+  /// open, within the last 24 hours) and rebuilds the FAB badge.
+  Future<void> _refreshOwnerBadge() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastOpenedMs = prefs.getInt(_historyLastOpenedKey) ?? 0;
+    final count = await DatabaseService.countFreshOwnerUpdates(
+      DateTime.fromMillisecondsSinceEpoch(lastOpenedMs),
+    );
+    if (!mounted) return;
+    setState(() => _freshOwnerUpdates = count);
+  }
 
   /// Triggers a Supabase sync of all pending reports.
   Future<void> _sync() async {
@@ -164,12 +198,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openHistory() async {
-    // Await the push so we can rebuild after returning; HistoryScreen also
-    // re-queries when it regains focus (see its WidgetsBindingObserver).
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
-    if (mounted) setState(() {});
+    // Capture the navigator before any async gap (lint-safe).
+    final navigator = Navigator.of(context);
+    // Stamp the open time so owner updates older than this are "seen" and
+    // the red badge clears (per spec, stored in prefs).
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _historyLastOpenedKey,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    // Await the push so we can refresh the badge after returning.
+    await navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
+    );
+    if (mounted) _refreshOwnerBadge();
   }
 
   /// Opens a compact bottom sheet with the sync status.
@@ -286,10 +328,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openHistory,
-        tooltip: 'History',
-        child: const Icon(Icons.history),
+      floatingActionButton: Badge.count(
+        count: _freshOwnerUpdates,
+        isLabelVisible: _freshOwnerUpdates > 0,
+        backgroundColor: Colors.red,
+        child: FloatingActionButton(
+          onPressed: _openHistory,
+          tooltip: 'History',
+          child: const Icon(Icons.history),
+        ),
       ),
     );
   }
@@ -542,12 +589,21 @@ class _HistoryScreenState extends State<HistoryScreen>
   /// One glanceable report tile: 80x80 photo with a traffic-light border,
   /// a type icon + time in the middle, an optional mic icon, and a badge.
   Widget _trafficCard(Report report) {
-    final state = report.syncState;
-    final Color borderColor = switch (state) {
-      SyncState.synced => Colors.green,
-      SyncState.failed => Colors.red,
-      SyncState.uploading => Colors.amber.shade700,
-      SyncState.local => Colors.grey,
+    // Ring color reflects the OWNER's decision (the team leader's feedback
+    // loop), not the sync state — sync state lives in the badge pill below.
+    final Color borderColor = switch (report.ownerStatus) {
+      'rejected' => Colors.red,
+      'validated' || 'acknowledged' || 'approved' => Colors.green,
+      'ordered' => Colors.blue,
+      _ => Colors.yellow, // 'pending' — waiting for the owner
+    };
+    final String ownerLabel = switch (report.ownerStatus) {
+      'rejected' => 'Rejected',
+      'validated' => 'Validated',
+      'acknowledged' => 'Acknowledged',
+      'approved' => 'Approved',
+      'ordered' => 'Ordered',
+      _ => 'Waiting…',
     };
     final Widget thumb = _reportThumb(report);
     final IconData typeIcon = switch (report.type) {
@@ -602,6 +658,15 @@ class _HistoryScreenState extends State<HistoryScreen>
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          ownerLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: borderColor,
                           ),
                         ),
                       ],

@@ -55,6 +55,13 @@ class Report {
   String photoUrl = '';
   String voiceUrl = '';
 
+  /// Owner's workflow decision, pulled from Supabase. One of:
+  /// 'pending', 'validated', 'acknowledged', 'approved', 'rejected', 'ordered'.
+  String ownerStatus = 'pending';
+
+  /// When the owner status last changed (drives the red 24h badge).
+  DateTime? ownerStatusAt;
+
   /// True when the photo upload has been completed (local file uploaded).
   bool get isPhotoSynced => photoStatus == 'synced';
   bool get isVoiceSynced =>

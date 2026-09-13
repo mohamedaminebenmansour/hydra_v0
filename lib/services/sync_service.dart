@@ -65,6 +65,46 @@ class SyncService {
     return report.isFullySynced || report.status == 'failed';
   }
 
+  /// Smart Pull-on-Open: fetches the owner's workflow decisions from Supabase
+  /// and applies them to local Isar records. Returns the number of reports
+  /// whose owner status changed (drives the red badge on the home screen).
+  /// Gracefully no-ops when offline or when the owner_status column does not
+  /// exist yet in Supabase.
+  static Future<int> checkOwnerUpdates() async {
+    if (!await isOnline()) {
+      debugPrint('OwnerFlow: offline — owner pull deferred');
+      return 0;
+    }
+    try {
+      final rows = await Supabase.instance.client
+          .from('reports')
+          .select('local_id, owner_status');
+      debugPrint('OwnerFlow: ${rows.length} remote row(s) checked');
+      int changed = 0;
+      for (final row in rows) {
+        final remote = Map<String, dynamic>.from(row);
+        final localId = int.tryParse(
+          remote['local_id']?.toString() ?? '',
+        );
+        if (localId == null) continue;
+        final remoteStatus = (remote['owner_status'] ?? 'pending').toString();
+        final local = await DatabaseService.getReportById(localId);
+        if (local == null) continue; // unknown report (e.g. pulled row)
+        if (local.ownerStatus == remoteStatus) continue;
+        await DatabaseService.updateOwnerStatus(local, remoteStatus);
+        changed++;
+      }
+      debugPrint('OwnerFlow: $changed report(s) updated from owner');
+      return changed;
+    } catch (e, st) {
+      debugPrint(
+        'OwnerFlow: owner pull failed (missing owner_status column?): '
+        '$e\n$st',
+      );
+      return 0;
+    }
+  }
+
   /// Uploads every retryable report to Supabase using partial/resilient
   /// sync. Returns the number of reports that reached a terminal state.
   static Future<int> syncPendingReports() async {

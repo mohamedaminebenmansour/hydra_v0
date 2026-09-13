@@ -122,6 +122,35 @@ class DatabaseService {
     return _isar.reports.where().sortByTimestampDesc().findAll();
   }
 
+  /// Update a report's owner status (pulled from Supabase) and stamp when it
+  /// changed, so the home-screen badge can count fresh 24h updates.
+  static Future<void> updateOwnerStatus(
+    Report report,
+    String ownerStatus,
+  ) async {
+    report.ownerStatus = ownerStatus;
+    report.ownerStatusAt = DateTime.now();
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint(
+      'OwnerFlow: report ${report.id} ownerStatus=$ownerStatus',
+    );
+  }
+
+  /// Count of reports whose owner status changed after [after] (the
+  /// last-history-open marker) within the last 24 hours. Drives the red badge.
+  static Future<int> countFreshOwnerUpdates(DateTime after) async {
+    final since24h = DateTime.now().subtract(const Duration(hours: 24));
+    final reports = await _isar.reports.where().findAll();
+    return reports
+        .where(
+          (r) =>
+              r.ownerStatusAt != null &&
+              r.ownerStatusAt!.isAfter(after) &&
+              r.ownerStatusAt!.isAfter(since24h),
+        )
+        .length;
+  }
+
   /// Live stream of the count of pending-or-failed reports. Used by the sync
   /// badge to show an amber count when work is queued.
   static Stream<int> watchPendingCount() {

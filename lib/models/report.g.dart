@@ -55,46 +55,56 @@ const ReportSchema = CollectionSchema(
       name: r'mobileId',
       type: IsarType.string,
     ),
-    r'photoPath': PropertySchema(
+    r'ownerStatus': PropertySchema(
       id: 10,
+      name: r'ownerStatus',
+      type: IsarType.string,
+    ),
+    r'ownerStatusAt': PropertySchema(
+      id: 11,
+      name: r'ownerStatusAt',
+      type: IsarType.dateTime,
+    ),
+    r'photoPath': PropertySchema(
+      id: 12,
       name: r'photoPath',
       type: IsarType.string,
     ),
     r'photoStatus': PropertySchema(
-      id: 11,
+      id: 13,
       name: r'photoStatus',
       type: IsarType.string,
     ),
     r'photoUrl': PropertySchema(
-      id: 12,
+      id: 14,
       name: r'photoUrl',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 13, name: r'status', type: IsarType.string),
+    r'status': PropertySchema(id: 15, name: r'status', type: IsarType.string),
     r'supabaseId': PropertySchema(
-      id: 14,
+      id: 16,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 15,
+      id: 17,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
-    r'type': PropertySchema(id: 16, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 17, name: r'userId', type: IsarType.string),
+    r'type': PropertySchema(id: 18, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 19, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 18,
+      id: 20,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 19,
+      id: 21,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 20,
+      id: 22,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -123,6 +133,7 @@ int _reportEstimateSize(
   var bytesCount = offsets.last;
   bytesCount += 3 + object.dbStatus.length * 3;
   bytesCount += 3 + object.mobileId.length * 3;
+  bytesCount += 3 + object.ownerStatus.length * 3;
   bytesCount += 3 + object.photoPath.length * 3;
   bytesCount += 3 + object.photoStatus.length * 3;
   bytesCount += 3 + object.photoUrl.length * 3;
@@ -152,17 +163,19 @@ void _reportSerialize(
   writer.writeDouble(offsets[7], object.lat);
   writer.writeDouble(offsets[8], object.lng);
   writer.writeString(offsets[9], object.mobileId);
-  writer.writeString(offsets[10], object.photoPath);
-  writer.writeString(offsets[11], object.photoStatus);
-  writer.writeString(offsets[12], object.photoUrl);
-  writer.writeString(offsets[13], object.status);
-  writer.writeString(offsets[14], object.supabaseId);
-  writer.writeDateTime(offsets[15], object.timestamp);
-  writer.writeString(offsets[16], object.type);
-  writer.writeString(offsets[17], object.userId);
-  writer.writeString(offsets[18], object.voicePath);
-  writer.writeString(offsets[19], object.voiceStatus);
-  writer.writeString(offsets[20], object.voiceUrl);
+  writer.writeString(offsets[10], object.ownerStatus);
+  writer.writeDateTime(offsets[11], object.ownerStatusAt);
+  writer.writeString(offsets[12], object.photoPath);
+  writer.writeString(offsets[13], object.photoStatus);
+  writer.writeString(offsets[14], object.photoUrl);
+  writer.writeString(offsets[15], object.status);
+  writer.writeString(offsets[16], object.supabaseId);
+  writer.writeDateTime(offsets[17], object.timestamp);
+  writer.writeString(offsets[18], object.type);
+  writer.writeString(offsets[19], object.userId);
+  writer.writeString(offsets[20], object.voicePath);
+  writer.writeString(offsets[21], object.voiceStatus);
+  writer.writeString(offsets[22], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -177,17 +190,19 @@ Report _reportDeserialize(
   object.lat = reader.readDouble(offsets[7]);
   object.lng = reader.readDouble(offsets[8]);
   object.mobileId = reader.readString(offsets[9]);
-  object.photoPath = reader.readString(offsets[10]);
-  object.photoStatus = reader.readString(offsets[11]);
-  object.photoUrl = reader.readString(offsets[12]);
-  object.status = reader.readString(offsets[13]);
-  object.supabaseId = reader.readString(offsets[14]);
-  object.timestamp = reader.readDateTime(offsets[15]);
-  object.type = reader.readString(offsets[16]);
-  object.userId = reader.readString(offsets[17]);
-  object.voicePath = reader.readString(offsets[18]);
-  object.voiceStatus = reader.readString(offsets[19]);
-  object.voiceUrl = reader.readString(offsets[20]);
+  object.ownerStatus = reader.readString(offsets[10]);
+  object.ownerStatusAt = reader.readDateTimeOrNull(offsets[11]);
+  object.photoPath = reader.readString(offsets[12]);
+  object.photoStatus = reader.readString(offsets[13]);
+  object.photoUrl = reader.readString(offsets[14]);
+  object.status = reader.readString(offsets[15]);
+  object.supabaseId = reader.readString(offsets[16]);
+  object.timestamp = reader.readDateTime(offsets[17]);
+  object.type = reader.readString(offsets[18]);
+  object.userId = reader.readString(offsets[19]);
+  object.voicePath = reader.readString(offsets[20]);
+  object.voiceStatus = reader.readString(offsets[21]);
+  object.voiceUrl = reader.readString(offsets[22]);
   return object;
 }
 
@@ -221,7 +236,7 @@ P _reportDeserializeProp<P>(
     case 10:
       return (reader.readString(offset)) as P;
     case 11:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 12:
       return (reader.readString(offset)) as P;
     case 13:
@@ -229,16 +244,20 @@ P _reportDeserializeProp<P>(
     case 14:
       return (reader.readString(offset)) as P;
     case 15:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 16:
       return (reader.readString(offset)) as P;
     case 17:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 18:
       return (reader.readString(offset)) as P;
     case 19:
       return (reader.readString(offset)) as P;
     case 20:
+      return (reader.readString(offset)) as P;
+    case 21:
+      return (reader.readString(offset)) as P;
+    case 22:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -889,6 +908,227 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'mobileId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'ownerStatus',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'ownerStatus',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'ownerStatus',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'ownerStatus', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'ownerStatus', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'ownerStatusAt'),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'ownerStatusAt'),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtEqualTo(
+    DateTime? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'ownerStatusAt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'ownerStatusAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'ownerStatusAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> ownerStatusAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'ownerStatusAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
       );
     });
   }
@@ -2538,6 +2778,30 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> sortByOwnerStatus() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatus', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByOwnerStatusDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatus', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByOwnerStatusAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatusAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByOwnerStatusAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatusAt', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByPhotoPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'photoPath', Sort.asc);
@@ -2804,6 +3068,30 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByOwnerStatus() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatus', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByOwnerStatusDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatus', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByOwnerStatusAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatusAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByOwnerStatusAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ownerStatusAt', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByPhotoPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'photoPath', Sort.asc);
@@ -3002,6 +3290,20 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctByOwnerStatus({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'ownerStatus', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByOwnerStatusAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'ownerStatusAt');
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByPhotoPath({
     bool caseSensitive = true,
   }) {
@@ -3153,6 +3455,18 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, String, QQueryOperations> mobileIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'mobileId');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> ownerStatusProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'ownerStatus');
+    });
+  }
+
+  QueryBuilder<Report, DateTime?, QQueryOperations> ownerStatusAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'ownerStatusAt');
     });
   }
 
