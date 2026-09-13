@@ -587,42 +587,52 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
-  /// One glanceable report tile: 80x80 photo with a traffic-light border,
-  /// One glanceable report tile: 80x80 photo with a traffic-light border,
-  /// a type icon + time in the middle, an optional mic icon, and a badge.
+  /// Status avatar (CircleAvatar + caption) remembered from the owner's
+  /// decision. Dominant icon, serving also as a first-time onboarding cue.
+  Widget _statusAvatar(Report report) => _statusAvatarFor(report.ownerStatus);
+
+  String _statusWord(Report report) => _statusWordFor(report.ownerStatus);
+
+  Widget _statusAvatarFor(String s) {
+    final (bg, fg, icon) = switch (s) {
+      'validated' || 'approved' => (Colors.green, Colors.white, Icons.check),
+      'acknowledged' => (Colors.blue, Colors.white, Icons.visibility),
+      'ordered' => (Colors.orange, Colors.white, Icons.local_shipping),
+      'rejected' => (Colors.red, Colors.white, Icons.close),
+      _ => (Colors.yellow, Colors.black, Icons.hourglass_top),
+    };
+    return CircleAvatar(radius: 22, backgroundColor: bg, child: Icon(icon, size: 24, color: fg));
+  }
+
+  String _statusWordFor(String s) => switch (s) {
+        'validated' => 'Validated',
+        'approved' => 'Approved',
+        'acknowledged' => 'Acknowledged',
+        'ordered' => 'Ordered',
+        'rejected' => 'Rejected',
+        _ => 'Waiting',
+      };
+
+  IconData _typeIcon(Report r) => switch (r.type) {
+        'work' => Icons.build,
+        'problem' => Icons.warning,
+        _ => Icons.inventory,
+      };
+
+  Color _typeColor(Report r) => switch (r.type) {
+        'work' => Colors.grey,
+        'problem' => Colors.red,
+        _ => Colors.amber,
+      };
+
+  /// One glanceable, icon-dominant report tile: 100x100 photo on the left
+  /// with a status overlay (avatar + tiny caption), a giant type icon and the
+  /// timestamp on the right, and the sync badge strip underneath.
   Widget _trafficCard(Report report) {
-    // Ring color reflects the OWNER's decision (the team leader's feedback
-    // loop), not the sync state — sync state lives in the badge pill below.
-    final Color borderColor = switch (report.ownerStatus) {
-      'rejected' => Colors.red,
-      'validated' || 'acknowledged' || 'approved' => Colors.green,
-      'ordered' => Colors.blue,
-      _ => Colors.yellow, // 'pending' — waiting for the owner
-    };
-    final String ownerLabel = switch (report.ownerStatus) {
-      'rejected' => 'Rejected',
-      'validated' => 'Validated',
-      'acknowledged' => 'Acknowledged',
-      'approved' => 'Approved',
-      'ordered' => 'Ordered',
-      _ => 'Waiting…',
-    };
     final Widget thumb = _reportThumb(report);
-    final IconData typeIcon = switch (report.type) {
-      'work' => Icons.handyman,
-      'problem' => Icons.warning_amber_rounded,
-      _ => Icons.inventory_2,
-    };
-    final Color typeColor = switch (report.type) {
-      'work' => Colors.blue,
-      'problem' => Colors.red,
-      _ => Colors.amber.shade700,
-    };
-    final bool hasVoice =
-        report.voicePath.isNotEmpty && report.isVoiceSynced;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -635,50 +645,58 @@ class _HistoryScreenState extends State<HistoryScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: borderColor, width: 4),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: thumb,
-                    ),
-                  ),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  // 100x100 photo with the status badge overlaid bottom-right.
+                  SizedBox(
+                    width: 100,
+                    height: 100,
+                    child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Icon(typeIcon, size: 44, color: typeColor),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('HH:mm')
-                              .format(report.timestamp.toLocal()),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: thumb,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          ownerLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: borderColor,
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Column(
+                            children: [
+                              _statusAvatar(report),
+                              Text(
+                                _statusWord(report),
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.black54,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  if (hasVoice)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: Icon(Icons.mic, size: 32, color: Colors.blue),
+                  const SizedBox(width: 16),
+                  // Details: giant type icon + timestamp.
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(_typeIcon(report), size: 40, color: _typeColor(report)),
+                        const SizedBox(height: 6),
+                        Text(
+                          DateFormat('HH:mm').format(report.timestamp.toLocal()),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
