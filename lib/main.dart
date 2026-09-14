@@ -650,11 +650,21 @@ class _HistoryScreenState extends State<HistoryScreen>
         _ => Colors.amber,
       };
 
-  /// One glanceable, icon-dominant report tile: 100x100 photo on the left
-  /// with a status overlay (avatar + tiny caption), a giant type icon and the
-  /// timestamp on the right, and the sync badge strip underneath.
+  /// Border color based on ownerStatus: Yellow=pending, Green=validated/acknowledged,
+  /// Orange=ordered, Red=rejected.
+  Color _borderColorForStatus(String ownerStatus) => switch (ownerStatus) {
+        'validated' || 'acknowledged' => Colors.green,
+        'ordered' => Colors.orange,
+        'rejected' => Colors.red,
+        _ => Colors.yellow,
+      };
+
+  /// One glanceable, icon-dominant report tile: 90x90 photo on the left
+  /// with a colored status border, a giant type icon and the
+  /// timestamp on the right, and a clean status row underneath.
   Widget _trafficCard(Report report) {
-    final Widget thumb = _reportThumb(report);
+    final borderColor = _borderColorForStatus(report.ownerStatus);
+    final thumb = _reportThumb(report, size: 80);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -665,67 +675,70 @@ class _HistoryScreenState extends State<HistoryScreen>
       child: InkWell(
         onTap: () => _openReport(report),
         child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          padding: const EdgeInsets.all(10.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 100x100 photo with the status badge overlaid bottom-right.
-                  SizedBox(
-                    width: 100,
-                    height: 100,
-                    child: Stack(
-                      fit: StackFit.expand,
+              // 90x90 photo with a colored status border - no overlays.
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  border: Border.all(color: borderColor, width: 5.0),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: thumb,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Info section: type icon + date/time on top, status row on bottom.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Top row: giant type icon + full date and time.
+                    Row(
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: thumb,
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Column(
-                            children: [
-                              _statusAvatar(report),
-                              Text(
-                                _statusWord(report),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.black54,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // Details: giant type icon + timestamp.
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(_typeIcon(report), size: 40, color: _typeColor(report)),
-                        const SizedBox(height: 6),
+                        Icon(_typeIcon(report), size: 30, color: _typeColor(report)),
+                        const SizedBox(width: 8),
                         Text(
-                          DateFormat('HH:mm').format(report.timestamp.toLocal()),
+                          DateFormat('d MMM, HH:mm').format(report.timestamp.toLocal()),
                           style: const TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             fontWeight: FontWeight.bold,
                             color: Colors.black87,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    // Bottom row: colored dot + status text.
+                    Row(
+                      children: [
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: borderColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _statusWord(report),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              _syncBadge(report),
             ],
           ),
         ),
