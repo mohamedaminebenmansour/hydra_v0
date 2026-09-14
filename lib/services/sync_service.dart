@@ -196,6 +196,7 @@ class SyncService {
       'type': report.type,
       'photo_url': report.photoUrl,
       'voice_url': report.voiceUrl,
+      'problem_category': report.problemCategory,
       'lat': report.lat,
       'lng': report.lng,
       'timestamp': report.timestamp.toUtc().toIso8601String(),

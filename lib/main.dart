@@ -914,6 +914,9 @@ class _SaveReportScreenState extends State<SaveReportScreen>
   /// True once a voice note has been recorded (enables Re-record).
   bool _hasRecording = false;
 
+  /// Selected problem category for problem-type reports.
+  String? _problemCategory;
+
   Timer? _autoStopTimer;
   bool _saving = false;
 
@@ -1183,6 +1186,54 @@ class _SaveReportScreenState extends State<SaveReportScreen>
     await _onMicTap();
   }
 
+  /// Builds the problem category selection row with 4 icon buttons.
+  Widget _buildProblemCategoryRow() {
+    final categories = [
+      {'icon': Icons.build, 'color': Colors.red, 'value': 'machine', 'label': 'Machine'},
+      {'icon': Icons.inventory, 'color': Colors.amber, 'value': 'material_missing', 'label': 'Material'},
+      {'icon': Icons.terrain, 'color': Colors.brown, 'value': 'soil', 'label': 'Soil/Rock'},
+      {'icon': Icons.person_off, 'color': Colors.blue, 'value': 'external', 'label': 'External'},
+    ];
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: categories.map((cat) {
+        final isSelected = _problemCategory == cat['value'];
+        final color = cat['color'] as Color;
+        return GestureDetector(
+          onTap: () => setState(() => _problemCategory = cat['value'] as String),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isSelected ? color.withValues(alpha: 0.2) : null,
+                  shape: BoxShape.circle,
+                  border: isSelected ? Border.all(color: color, width: 2) : null,
+                ),
+                child: Icon(
+                  cat['icon'] as IconData,
+                  size: 50,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                cat['label'] as String,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? color : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     // Wait for any in-flight stop to fully finish FIRST. Without this, a
@@ -1279,7 +1330,8 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..status = 'local'
         ..photoStatus = 'pending'
         ..voiceStatus = 'pending'
-        ..dbStatus = 'pending';
+        ..dbStatus = 'pending'
+        ..problemCategory = _problemCategory ?? 'general';
       final savedId = await ReportLocalService.saveReport(report);
       debugPrint('SaveFlow: report persisted with Isar id=$savedId');
       if (!mounted) return;
@@ -1329,6 +1381,21 @@ class _SaveReportScreenState extends State<SaveReportScreen>
                 ),
               ),
             ),
+            // Problem category selection (only for problem-type reports).
+            if (widget.type == 'problem') ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Problem Category',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildProblemCategoryRow(),
+              const SizedBox(height: 12),
+            ],
             // Mic zone: ripple rings while recording, re-record pill after.
             Expanded(
               flex: 2,

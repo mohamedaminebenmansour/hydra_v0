@@ -62,6 +62,10 @@ class Report {
   /// When the owner status last changed (drives the red 24h badge).
   DateTime? ownerStatusAt;
 
+  /// Problem category for problem-type reports.
+  /// One of: 'general', 'machine', 'material_missing', 'soil', 'external'.
+  String problemCategory = 'general';
+
   /// True when the photo upload has been completed (local file uploaded).
   bool get isPhotoSynced => photoStatus == 'synced';
   bool get isVoiceSynced =>
