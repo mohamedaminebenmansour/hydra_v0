@@ -425,6 +425,12 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen>
     with WidgetsBindingObserver {
+  /// Segmentation: which list the user is viewing.
+  String _view = 'ACTIVE';
+
+  /// Active type filter from the chip row ('All', 'Work', 'Problem', 'Material').
+  String _filter = 'All';
+
   @override
   void initState() {
     super.initState();
@@ -447,6 +453,25 @@ class _HistoryScreenState extends State<HistoryScreen>
         builder: (_) => ReportDetailScreen(report: report),
       ),
     );
+  }
+
+  /// True when [report] belongs to the currently selected view.
+  bool _matchesView(Report report) {
+    if (_view == 'HISTORY') {
+      return report.ownerStatus == 'validated' ||
+          report.ownerStatus == 'acknowledged' ||
+          report.ownerStatus == 'rejected';
+    }
+    // ACTIVE: waiting on the owner, ordered, or still syncing locally.
+    return report.ownerStatus == 'pending' ||
+        report.ownerStatus == 'ordered' ||
+        report.syncState != SyncState.synced;
+  }
+
+  /// True when [report] matches the selected type chip.
+  bool _matchesType(Report report) {
+    if (_filter == 'All') return true;
+    return report.type == _filter.toLowerCase();
   }
 
   /// Day-group header ('TODAY', 'YESTERDAY', or a long date) for a local ts.
@@ -712,74 +737,131 @@ class _HistoryScreenState extends State<HistoryScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('History')),
-      body: StreamBuilder<List<Report>>(
-        stream: DatabaseService.watchAllReports(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final reports = snapshot.data ?? const <Report>[];
-          if (reports.isEmpty) {
-            // Bold, zero-reading empty state.
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.shield, size: 140, color: Colors.deepPurple),
-                  SizedBox(height: 16),
-                  Text(
-                    'No reports yet.\nYour work will be protected here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Segmented control: ACTIVE vs HISTORY.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'ACTIVE',
+                    label: Text('ACTIVE'),
+                    icon: Icon(Icons.fiber_new),
+                  ),
+                  ButtonSegment(
+                    value: 'HISTORY',
+                    label: Text('HISTORY'),
+                    icon: Icon(Icons.history),
                   ),
                 ],
+                selected: {_view},
+                onSelectionChanged: (selection) {
+                  setState(() => _view = selection.first);
+                },
               ),
-            );
-          }
-
-          // Group the (already newest-first) list by day, preserving order.
-          final headers = <String>[];
-          final byDay = <String, List<Report>>{};
-          for (final report in reports) {
-            final label = _dayLabel(report.timestamp.toLocal());
-            if (!byDay.containsKey(label)) {
-              byDay[label] = <Report>[];
-              headers.add(label);
-            }
-            byDay[label]!.add(report);
-          }
-
-          // Flatten into header + tile entries for a single ListView.
-          final entries = <Widget>[];
-          for (final label in headers) {
-            entries.add(
-              Padding(
-                padding: const EdgeInsets.only(top: 12, left: 4, right: 4),
-                child: Text(
-                  label.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                    color: Colors.deepPurple,
-                  ),
-                ),
+            ),
+            // Type filter chips.
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  for (final label in const [
+                    'All',
+                    'Work',
+                    'Problem',
+                    'Material',
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(label),
+                        selected: _filter == label,
+                        onSelected: (_) => setState(() => _filter = label),
+                      ),
+                    ),
+                ],
               ),
-            );
-            for (final report in byDay[label]!) {
-              entries.add(_trafficCard(report));
-            }
-          }
+            ),
+            // Filtered report list.
+            Expanded(
+              child: StreamBuilder<List<Report>>(
+                stream: DatabaseService.watchAllReports(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final reports = snapshot.data ?? const <Report>[];
+                  // Filter BEFORE rendering: view, then type.
+                  final filtered = reports
+                      .where((r) => _matchesView(r) && _matchesType(r))
+                      .toList();
+                  if (filtered.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _view == 'ACTIVE'
+                              ? 'No active items. All caught up!'
+                              : 'No history yet.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(8),
-            itemCount: entries.length,
-            itemBuilder: (context, index) => entries[index],
-          );
-        },
+                  // Group the (already newest-first) list by day.
+                  final headers = <String>[];
+                  final byDay = <String, List<Report>>{};
+                  for (final report in filtered) {
+                    final label = _dayLabel(report.timestamp.toLocal());
+                    if (!byDay.containsKey(label)) {
+                      byDay[label] = <Report>[];
+                      headers.add(label);
+                    }
+                    byDay[label]!.add(report);
+                  }
+
+                  // Flatten into header + tile entries for a single ListView.
+                  final entries = <Widget>[];
+                  for (final label in headers) {
+                    entries.add(
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(top: 12, left: 4, right: 4),
+                        child: Text(
+                          label.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                      ),
+                    );
+                    for (final report in byDay[label]!) {
+                      entries.add(_trafficCard(report));
+                    }
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) => entries[index],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
