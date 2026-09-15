@@ -15,7 +15,11 @@ class DatabaseService {
   static const String _dbName = 'hydra_db';
 
   /// True once [init] has completed successfully.
-  static bool get isInitialized => _isar.isOpen;
+  static bool _initialized = false;
+
+  /// True once [init] has completed successfully. Safe to call before [init]
+  /// (unlike `_isar.isOpen`, which would throw on the uninitialized field).
+  static bool get isInitialized => _initialized && _isar.isOpen;
 
   /// Open the Isar database in the application documents directory.
   static Future<void> init() async {
@@ -26,6 +30,7 @@ class DatabaseService {
         directory: dir.path,
         name: _dbName,
       );
+      _initialized = true;
       debugPrint('DatabaseFlow: Isar opened at ${dir.path}/$_dbName');
     } catch (e, st) {
       debugPrint('DatabaseFlow: Isar.open failed: $e\n$st');
@@ -139,6 +144,7 @@ class DatabaseService {
   /// Count of reports whose owner status changed after [after] (the
   /// last-history-open marker) within the last 24 hours. Drives the red badge.
   static Future<int> countFreshOwnerUpdates(DateTime after) async {
+    if (!isInitialized) return 0;
     final since24h = DateTime.now().subtract(const Duration(hours: 24));
     final reports = await _isar.reports.where().findAll();
     return reports
@@ -154,6 +160,9 @@ class DatabaseService {
   /// Live stream of the count of pending-or-failed reports. Used by the sync
   /// badge to show an amber count when work is queued.
   static Stream<int> watchPendingCount() {
+    // Never throw from a build-phase stream getter: an unopened database
+    // simply reports "nothing queued".
+    if (!isInitialized) return const Stream<int>.empty();
     return _isar.reports
         .filter()
         .statusEqualTo('pending')
@@ -166,6 +175,7 @@ class DatabaseService {
   /// Live-sorted stream of all reports (newest first). Emits immediately and
   /// on every Isar write, so list screens update without manual reloads.
   static Stream<List<Report>> watchAllReports() {
+    if (!isInitialized) return const Stream<List<Report>>.empty();
     return _isar.reports
         .where()
         .sortByTimestampDesc()

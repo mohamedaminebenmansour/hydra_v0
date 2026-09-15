@@ -33,27 +33,55 @@ class SyncService {
 
   /// Starts background triggers: push on connectivity restore, plus an
   /// initial pull on app start. Call once from main() after Isar init.
+  ///
+  /// Never throws: a connectivity-plugin failure only costs us the auto-push
+  /// trigger, it must never block `main()` from reaching `runApp()`.
   static Future<void> init() async {
     _connectivitySub?.cancel();
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
-      final online = results.any((r) => r != ConnectivityResult.none);
-      if (online) {
-        debugPrint('SyncFlow: connectivity restored — scheduling auto sync');
-        // Small debounce so the network is actually usable.
-        Future.delayed(const Duration(seconds: 2), () async {
-          await syncPendingReports();
-          await pullRemoteChanges();
-        });
-      }
-    });
+    try {
+      _connectivitySub = Connectivity().onConnectivityChanged.listen(
+        (results) {
+          final online = results.any((r) => r != ConnectivityResult.none);
+          if (online) {
+            debugPrint(
+              'SyncFlow: connectivity restored — scheduling auto sync',
+            );
+            // Small debounce so the network is actually usable.
+            Future.delayed(const Duration(seconds: 2), () async {
+              await syncPendingReports();
+              await pullRemoteChanges();
+            });
+          }
+        },
+        onError: (Object e, StackTrace st) {
+          debugPrint('SyncFlow: connectivity stream error: $e\n$st');
+        },
+      );
+    } catch (e, st) {
+      debugPrint('SyncFlow: connectivity stream unavailable: $e\n$st');
+    }
     // Initial pull at startup (fire-and-forget).
     unawaited(pullRemoteChanges());
   }
 
   /// True if any network interface is currently available.
+  ///
+  /// Never throws: if the connectivity plugin is unavailable or fails, we
+  /// report "offline" so callers defer exactly as they already do without a
+  /// network. That matters because [checkOwnerUpdates], [syncPendingReports]
+  /// and [pullRemoteChanges] all call this *before* entering their own try
+  /// blocks, so a probe failure would otherwise surface as an unhandled async
+  /// error.
   static Future<bool> isOnline() async {
-    final results = await Connectivity().checkConnectivity();
-    return results.any((r) => r != ConnectivityResult.none);
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.any((r) => r != ConnectivityResult.none);
+    } catch (e, st) {
+      debugPrint(
+        'SyncFlow: connectivity probe failed (assuming offline): $e\n$st',
+      );
+      return false;
+    }
   }
 
   /// Retry (push) a single report — invoked from the History "tap to retry"
