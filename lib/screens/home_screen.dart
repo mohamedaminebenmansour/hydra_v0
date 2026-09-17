@@ -13,6 +13,7 @@ import '../services/sync_service.dart';
 import '../widgets/action_button.dart';
 import 'history_screen.dart';
 import 'save_report_screen.dart';
+import 'site_map_screen.dart';
 
 /// SharedPreferences key holding the last time the History screen was opened.
 /// Owner updates newer than this drive the red badge on the History FAB.
@@ -233,6 +234,17 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Hydra'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Site Map',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SiteMapScreen(),
+                ),
+              );
+            },
+          ),
           StreamBuilder<int>(
             stream: DatabaseService.watchPendingCount(),
             builder: (context, snapshot) {
