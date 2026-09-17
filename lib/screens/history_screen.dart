@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/report.dart';
+import '../role.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/report_thumbnail.dart';
@@ -10,7 +11,15 @@ import 'report_detail_screen.dart';
 /// Displays all locally saved Reports in a scrollable list with a colored
 /// status border (Yellow = pending, Green = synced).
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.userRoleOverride, this.reportsStream});
+
+  /// Test seam for the compile-time role. Null falls back to the [userRole]
+  /// dart-define; tests pass a role explicitly to exercise both in one run.
+  final String? userRoleOverride;
+
+  /// Injectable report stream (defaults to Isar's live query). Isar streams
+  /// don't run in the widget-test VM, so tests pass an in-memory stream.
+  final Stream<List<Report>>? reportsStream;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -23,6 +32,10 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   /// Active type filter from the chip row ('All', 'Work', 'Problem', 'Material').
   String _filter = 'All';
+
+  /// True when the signed-in user is a Team Leader (see [userRoleOverride]).
+  bool get _isTeamLeader =>
+      (widget.userRoleOverride ?? userRole) == 'team_leader';
 
   @override
   void initState() {
@@ -210,6 +223,49 @@ class _HistoryScreenState extends State<HistoryScreen>
         _ => Colors.yellow,
       };
 
+  /// The Team Leader gate decision shown as a status chip on the card.
+  /// (color, label): Red = rejected, Green = verified, Yellow = not yet done.
+  (Color, String) _tlStatusChip(Report report) => switch (report.tlValidationType) {
+        'rejected' => (Colors.red, 'TL: Rejected'),
+        'physical' || 'remote' => (Colors.green, 'TL: Verified'),
+        _ => (Colors.yellow, 'TL: Pending'),
+      };
+
+  /// One small labeled status dot for the card's status row.
+  Widget _statusDot(Color color, String label) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      );
+
+  /// The card's bottom status row, driven by the signed-in role.
+  Widget _statusRow(Report report, Color borderColor) {
+    final tlChip = _tlStatusChip(report);
+    return Row(
+      children: [
+        if (!_isTeamLeader) ...[
+          _statusDot(tlChip.$1, tlChip.$2),
+          const SizedBox(width: 12),
+        ],
+        _statusDot(borderColor, _statusWord(report)),
+      ],
+    );
+  }
+
   /// One glanceable, icon-dominant report tile: a 100x100 photo on the left
   /// with a colored status border, a giant type icon and the
   /// timestamp on the right, and a clean status row underneath.
@@ -266,27 +322,10 @@ class _HistoryScreenState extends State<HistoryScreen>
                       ],
                     ),
                     const SizedBox(height: 8),
-                    // Bottom row: colored dot + status text.
-                    Row(
-                      children: [
-                        Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: borderColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _statusWord(report),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                    // Role-based status chips: a subcontractor sees both
+                    // gates (their work's TL decision + the owner's workflow);
+                    // a Team Leader only tracks the owner layer.
+                    _statusRow(report, borderColor),
                   ],
                 ),
               ),
@@ -371,7 +410,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             // Filtered report list.
             Expanded(
               child: StreamBuilder<List<Report>>(
-                stream: DatabaseService.watchAllReports(),
+                stream: widget.reportsStream ?? DatabaseService.watchAllReports(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());

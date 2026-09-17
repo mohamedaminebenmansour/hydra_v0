@@ -17,144 +17,149 @@ const ReportSchema = CollectionSchema(
   name: r'Report',
   id: 4107730612455750309,
   properties: {
-    r'dbStatus': PropertySchema(
+    r'activityLog': PropertySchema(
       id: 0,
+      name: r'activityLog',
+      type: IsarType.stringList,
+    ),
+    r'dbStatus': PropertySchema(
+      id: 1,
       name: r'dbStatus',
       type: IsarType.string,
     ),
     r'isDbSynced': PropertySchema(
-      id: 1,
+      id: 2,
       name: r'isDbSynced',
       type: IsarType.bool,
     ),
     r'isFullySynced': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'isFullySynced',
       type: IsarType.bool,
     ),
     r'isPhotoSynced': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'isPhotoSynced',
       type: IsarType.bool,
     ),
     r'isRetryable': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'isRetryable',
       type: IsarType.bool,
     ),
-    r'isSynced': PropertySchema(id: 5, name: r'isSynced', type: IsarType.bool),
+    r'isSynced': PropertySchema(id: 6, name: r'isSynced', type: IsarType.bool),
     r'isVoiceSynced': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'isVoiceSynced',
       type: IsarType.bool,
     ),
-    r'lat': PropertySchema(id: 7, name: r'lat', type: IsarType.double),
-    r'lng': PropertySchema(id: 8, name: r'lng', type: IsarType.double),
+    r'lat': PropertySchema(id: 8, name: r'lat', type: IsarType.double),
+    r'lng': PropertySchema(id: 9, name: r'lng', type: IsarType.double),
     r'mobileId': PropertySchema(
-      id: 9,
+      id: 10,
       name: r'mobileId',
       type: IsarType.string,
     ),
     r'ownerStatus': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'ownerStatus',
       type: IsarType.string,
     ),
     r'ownerStatusAt': PropertySchema(
-      id: 11,
+      id: 12,
       name: r'ownerStatusAt',
       type: IsarType.dateTime,
     ),
     r'photoPath': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'photoPath',
       type: IsarType.string,
     ),
     r'photoStatus': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'photoStatus',
       type: IsarType.string,
     ),
     r'photoUrl': PropertySchema(
-      id: 14,
+      id: 15,
       name: r'photoUrl',
       type: IsarType.string,
     ),
     r'problemCategory': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'problemCategory',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 16, name: r'status', type: IsarType.string),
+    r'status': PropertySchema(id: 17, name: r'status', type: IsarType.string),
     r'supabaseId': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'tlRejectionPhotoPath': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'tlRejectionPhotoPath',
       type: IsarType.string,
     ),
     r'tlRejectionPhotoUrl': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'tlRejectionPhotoUrl',
       type: IsarType.string,
     ),
     r'tlRejectionVoicePath': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'tlRejectionVoicePath',
       type: IsarType.string,
     ),
     r'tlRejectionVoiceUrl': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'tlRejectionVoiceUrl',
       type: IsarType.string,
     ),
     r'tlValidatedAt': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'tlValidatedAt',
       type: IsarType.dateTime,
     ),
     r'tlValidationPhotoPath': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'tlValidationPhotoPath',
       type: IsarType.string,
     ),
     r'tlValidationPhotoUrl': PropertySchema(
-      id: 25,
+      id: 26,
       name: r'tlValidationPhotoUrl',
       type: IsarType.string,
     ),
     r'tlValidationType': PropertySchema(
-      id: 26,
+      id: 27,
       name: r'tlValidationType',
       type: IsarType.string,
     ),
     r'tlValidatorId': PropertySchema(
-      id: 27,
+      id: 28,
       name: r'tlValidatorId',
       type: IsarType.string,
     ),
-    r'type': PropertySchema(id: 28, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 29, name: r'userId', type: IsarType.string),
+    r'type': PropertySchema(id: 29, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 30, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 30,
+      id: 31,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 31,
+      id: 32,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 32,
+      id: 33,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -181,6 +186,13 @@ int _reportEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.activityLog.length * 3;
+  {
+    for (var i = 0; i < object.activityLog.length; i++) {
+      final value = object.activityLog[i];
+      bytesCount += value.length * 3;
+    }
+  }
   bytesCount += 3 + object.dbStatus.length * 3;
   bytesCount += 3 + object.mobileId.length * 3;
   bytesCount += 3 + object.ownerStatus.length * 3;
@@ -212,39 +224,40 @@ void _reportSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.dbStatus);
-  writer.writeBool(offsets[1], object.isDbSynced);
-  writer.writeBool(offsets[2], object.isFullySynced);
-  writer.writeBool(offsets[3], object.isPhotoSynced);
-  writer.writeBool(offsets[4], object.isRetryable);
-  writer.writeBool(offsets[5], object.isSynced);
-  writer.writeBool(offsets[6], object.isVoiceSynced);
-  writer.writeDouble(offsets[7], object.lat);
-  writer.writeDouble(offsets[8], object.lng);
-  writer.writeString(offsets[9], object.mobileId);
-  writer.writeString(offsets[10], object.ownerStatus);
-  writer.writeDateTime(offsets[11], object.ownerStatusAt);
-  writer.writeString(offsets[12], object.photoPath);
-  writer.writeString(offsets[13], object.photoStatus);
-  writer.writeString(offsets[14], object.photoUrl);
-  writer.writeString(offsets[15], object.problemCategory);
-  writer.writeString(offsets[16], object.status);
-  writer.writeString(offsets[17], object.supabaseId);
-  writer.writeDateTime(offsets[18], object.timestamp);
-  writer.writeString(offsets[19], object.tlRejectionPhotoPath);
-  writer.writeString(offsets[20], object.tlRejectionPhotoUrl);
-  writer.writeString(offsets[21], object.tlRejectionVoicePath);
-  writer.writeString(offsets[22], object.tlRejectionVoiceUrl);
-  writer.writeDateTime(offsets[23], object.tlValidatedAt);
-  writer.writeString(offsets[24], object.tlValidationPhotoPath);
-  writer.writeString(offsets[25], object.tlValidationPhotoUrl);
-  writer.writeString(offsets[26], object.tlValidationType);
-  writer.writeString(offsets[27], object.tlValidatorId);
-  writer.writeString(offsets[28], object.type);
-  writer.writeString(offsets[29], object.userId);
-  writer.writeString(offsets[30], object.voicePath);
-  writer.writeString(offsets[31], object.voiceStatus);
-  writer.writeString(offsets[32], object.voiceUrl);
+  writer.writeStringList(offsets[0], object.activityLog);
+  writer.writeString(offsets[1], object.dbStatus);
+  writer.writeBool(offsets[2], object.isDbSynced);
+  writer.writeBool(offsets[3], object.isFullySynced);
+  writer.writeBool(offsets[4], object.isPhotoSynced);
+  writer.writeBool(offsets[5], object.isRetryable);
+  writer.writeBool(offsets[6], object.isSynced);
+  writer.writeBool(offsets[7], object.isVoiceSynced);
+  writer.writeDouble(offsets[8], object.lat);
+  writer.writeDouble(offsets[9], object.lng);
+  writer.writeString(offsets[10], object.mobileId);
+  writer.writeString(offsets[11], object.ownerStatus);
+  writer.writeDateTime(offsets[12], object.ownerStatusAt);
+  writer.writeString(offsets[13], object.photoPath);
+  writer.writeString(offsets[14], object.photoStatus);
+  writer.writeString(offsets[15], object.photoUrl);
+  writer.writeString(offsets[16], object.problemCategory);
+  writer.writeString(offsets[17], object.status);
+  writer.writeString(offsets[18], object.supabaseId);
+  writer.writeDateTime(offsets[19], object.timestamp);
+  writer.writeString(offsets[20], object.tlRejectionPhotoPath);
+  writer.writeString(offsets[21], object.tlRejectionPhotoUrl);
+  writer.writeString(offsets[22], object.tlRejectionVoicePath);
+  writer.writeString(offsets[23], object.tlRejectionVoiceUrl);
+  writer.writeDateTime(offsets[24], object.tlValidatedAt);
+  writer.writeString(offsets[25], object.tlValidationPhotoPath);
+  writer.writeString(offsets[26], object.tlValidationPhotoUrl);
+  writer.writeString(offsets[27], object.tlValidationType);
+  writer.writeString(offsets[28], object.tlValidatorId);
+  writer.writeString(offsets[29], object.type);
+  writer.writeString(offsets[30], object.userId);
+  writer.writeString(offsets[31], object.voicePath);
+  writer.writeString(offsets[32], object.voiceStatus);
+  writer.writeString(offsets[33], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -254,34 +267,35 @@ Report _reportDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = Report();
-  object.dbStatus = reader.readString(offsets[0]);
+  object.activityLog = reader.readStringList(offsets[0]) ?? [];
+  object.dbStatus = reader.readString(offsets[1]);
   object.id = id;
-  object.lat = reader.readDouble(offsets[7]);
-  object.lng = reader.readDouble(offsets[8]);
-  object.mobileId = reader.readString(offsets[9]);
-  object.ownerStatus = reader.readString(offsets[10]);
-  object.ownerStatusAt = reader.readDateTimeOrNull(offsets[11]);
-  object.photoPath = reader.readString(offsets[12]);
-  object.photoStatus = reader.readString(offsets[13]);
-  object.photoUrl = reader.readString(offsets[14]);
-  object.problemCategory = reader.readString(offsets[15]);
-  object.status = reader.readString(offsets[16]);
-  object.supabaseId = reader.readString(offsets[17]);
-  object.timestamp = reader.readDateTime(offsets[18]);
-  object.tlRejectionPhotoPath = reader.readString(offsets[19]);
-  object.tlRejectionPhotoUrl = reader.readString(offsets[20]);
-  object.tlRejectionVoicePath = reader.readString(offsets[21]);
-  object.tlRejectionVoiceUrl = reader.readString(offsets[22]);
-  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[23]);
-  object.tlValidationPhotoPath = reader.readString(offsets[24]);
-  object.tlValidationPhotoUrl = reader.readString(offsets[25]);
-  object.tlValidationType = reader.readString(offsets[26]);
-  object.tlValidatorId = reader.readString(offsets[27]);
-  object.type = reader.readString(offsets[28]);
-  object.userId = reader.readString(offsets[29]);
-  object.voicePath = reader.readString(offsets[30]);
-  object.voiceStatus = reader.readString(offsets[31]);
-  object.voiceUrl = reader.readString(offsets[32]);
+  object.lat = reader.readDouble(offsets[8]);
+  object.lng = reader.readDouble(offsets[9]);
+  object.mobileId = reader.readString(offsets[10]);
+  object.ownerStatus = reader.readString(offsets[11]);
+  object.ownerStatusAt = reader.readDateTimeOrNull(offsets[12]);
+  object.photoPath = reader.readString(offsets[13]);
+  object.photoStatus = reader.readString(offsets[14]);
+  object.photoUrl = reader.readString(offsets[15]);
+  object.problemCategory = reader.readString(offsets[16]);
+  object.status = reader.readString(offsets[17]);
+  object.supabaseId = reader.readString(offsets[18]);
+  object.timestamp = reader.readDateTime(offsets[19]);
+  object.tlRejectionPhotoPath = reader.readString(offsets[20]);
+  object.tlRejectionPhotoUrl = reader.readString(offsets[21]);
+  object.tlRejectionVoicePath = reader.readString(offsets[22]);
+  object.tlRejectionVoiceUrl = reader.readString(offsets[23]);
+  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[24]);
+  object.tlValidationPhotoPath = reader.readString(offsets[25]);
+  object.tlValidationPhotoUrl = reader.readString(offsets[26]);
+  object.tlValidationType = reader.readString(offsets[27]);
+  object.tlValidatorId = reader.readString(offsets[28]);
+  object.type = reader.readString(offsets[29]);
+  object.userId = reader.readString(offsets[30]);
+  object.voicePath = reader.readString(offsets[31]);
+  object.voiceStatus = reader.readString(offsets[32]);
+  object.voiceUrl = reader.readString(offsets[33]);
   return object;
 }
 
@@ -293,9 +307,9 @@ P _reportDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringList(offset) ?? []) as P;
     case 1:
-      return (reader.readBool(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 2:
       return (reader.readBool(offset)) as P;
     case 3:
@@ -307,17 +321,17 @@ P _reportDeserializeProp<P>(
     case 6:
       return (reader.readBool(offset)) as P;
     case 7:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 8:
       return (reader.readDouble(offset)) as P;
     case 9:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 10:
       return (reader.readString(offset)) as P;
     case 11:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 12:
       return (reader.readString(offset)) as P;
+    case 12:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 13:
       return (reader.readString(offset)) as P;
     case 14:
@@ -329,9 +343,9 @@ P _reportDeserializeProp<P>(
     case 17:
       return (reader.readString(offset)) as P;
     case 18:
-      return (reader.readDateTime(offset)) as P;
-    case 19:
       return (reader.readString(offset)) as P;
+    case 19:
+      return (reader.readDateTime(offset)) as P;
     case 20:
       return (reader.readString(offset)) as P;
     case 21:
@@ -339,9 +353,9 @@ P _reportDeserializeProp<P>(
     case 22:
       return (reader.readString(offset)) as P;
     case 23:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 24:
       return (reader.readString(offset)) as P;
+    case 24:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 25:
       return (reader.readString(offset)) as P;
     case 26:
@@ -357,6 +371,8 @@ P _reportDeserializeProp<P>(
     case 31:
       return (reader.readString(offset)) as P;
     case 32:
+      return (reader.readString(offset)) as P;
+    case 33:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -454,6 +470,203 @@ extension ReportQueryWhere on QueryBuilder<Report, Report, QWhereClause> {
 }
 
 extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogElementEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogElementBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'activityLog',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'activityLog',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogElementMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'activityLog',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'activityLog', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogElementIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'activityLog', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogLengthEqualTo(
+    int length,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'activityLog', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'activityLog', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'activityLog', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogLengthLessThan(
+    int length, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'activityLog', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  activityLogLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'activityLog', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> activityLogLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'activityLog',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterFilterCondition> dbStatusEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -4946,6 +5159,12 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
 }
 
 extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
+  QueryBuilder<Report, Report, QDistinct> distinctByActivityLog() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'activityLog');
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByDbStatus({
     bool caseSensitive = true,
   }) {
@@ -5220,6 +5439,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<Report, List<String>, QQueryOperations> activityLogProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'activityLog');
     });
   }
 

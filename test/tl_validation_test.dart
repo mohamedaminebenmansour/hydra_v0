@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydra_v0/models/report.dart';
 import 'package:hydra_v0/screens/report_detail_screen.dart';
@@ -17,7 +17,7 @@ void main() {
     });
 
     test('work reports need TL validation', () {
-      expect((Report()..type = 'work').needsTlValidation, isTrue);
+      expect((Report()..type = 'work'..timestamp = DateTime(2026, 9, 17)).needsTlValidation, isTrue);
     });
 
     test('material reports need TL validation', () {
@@ -31,6 +31,7 @@ void main() {
     test('a validated work report leaves the TO VERIFY list', () {
       final r = Report()
         ..type = 'work'
+        ..timestamp = DateTime(2026, 9, 17)
         ..tlValidatedAt = DateTime.now()
         ..tlValidationType = 'physical';
       expect(r.needsTlValidation, isFalse);
@@ -92,22 +93,22 @@ void main() {
     testWidgets('offers both giant validation actions in validation mode', (
       tester,
     ) async {
-      await pumpDetail(tester, Report()..type = 'work', validationMode: true);
+      await pumpDetail(tester, Report()..type = 'work'..timestamp = DateTime(2026, 9, 17), validationMode: true);
 
       expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsOneWidget);
       expect(find.text('VALIDATE ON SITE (Take Photo)'), findsOneWidget);
       // The "Dispute Shield" rejection action is part of the gate too.
-      expect(find.text('REJECT (Photo + Voice)'), findsOneWidget);
+      expect(find.text('REJECT & REQUEST FIX'), findsOneWidget);
     });
 
     testWidgets('hides the gate buttons outside validation mode', (
       tester,
     ) async {
-      await pumpDetail(tester, Report()..type = 'work');
+      await pumpDetail(tester, Report()..type = 'work'..timestamp = DateTime(2026, 9, 17));
 
       expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
       expect(find.text('VALIDATE ON SITE (Take Photo)'), findsNothing);
-      expect(find.text('REJECT (Photo + Voice)'), findsNothing);
+      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
     });
 
     testWidgets('hides the gate buttons once the report is validated', (
@@ -115,26 +116,27 @@ void main() {
     ) async {
       final validated = Report()
         ..type = 'work'
+        ..timestamp = DateTime(2026, 9, 17)
         ..tlValidatedAt = DateTime.now()
         ..tlValidationType = 'physical';
       await pumpDetail(tester, validated, validationMode: true);
 
       expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
-      expect(find.text('REJECT (Photo + Voice)'), findsNothing);
+      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
     });
 
     testWidgets('a subcontractor never sees the gate buttons, even in '
         'validation mode', (tester) async {
       await pumpDetail(
         tester,
-        Report()..type = 'work',
+        Report()..type = 'work'..timestamp = DateTime(2026, 9, 17),
         validationMode: true,
         userRoleOverride: 'subcontractor',
       );
 
       expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
       expect(find.text('VALIDATE ON SITE (Take Photo)'), findsNothing);
-      expect(find.text('REJECT (Photo + Voice)'), findsNothing);
+      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
     });
   });
 
@@ -142,6 +144,7 @@ void main() {
     test('a rejected report is flagged and carries its proof media', () {
       final r = Report()
         ..type = 'work'
+        ..timestamp = DateTime(2026, 9, 17)
         ..tlValidatedAt = DateTime.now()
         ..tlValidationType = 'rejected'
         ..tlRejectionPhotoPath = '/docs/reports/reject_1.jpg'

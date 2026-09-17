@@ -1,4 +1,7 @@
-﻿import 'package:isar_community/isar.dart';
+﻿import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:isar_community/isar.dart';
 
 part 'report.g.dart';
 
@@ -108,6 +111,13 @@ class Report {
   /// Remote URL of the "Dispute Shield" rejection voice note once uploaded.
   String tlRejectionVoiceUrl = '';
 
+  /// Append-only audit trail of the report's life ("Fix & Resubmit" loop).
+  /// Each entry is a flat JSON string:
+  /// `{"actor":"tl|sub|owner","action":"...","photoUrl":"...","voiceUrl":"...",
+  ///   "time":"ISO-8601"}`. Kept as raw strings so it maps 1:1 to the Supabase
+  /// `activity_log JSONB` column without extra models.
+  List<String> activityLog = [];
+
   /// True when this report still needs a Team Leader gate decision.
   ///
   /// Only 'work' and 'material' reports pass through the gate; 'problem'
@@ -120,6 +130,42 @@ class Report {
   /// This is a TL-layer decision and never touches [ownerStatus].
   @ignore
   bool get isTlRejected => tlValidationType == 'rejected';
+
+  /// Appends one entry to [activityLog] (see its doc comment for the format).
+  /// [time] defaults to now; [photoUrl] / [voiceUrl] attach the proof media
+  /// belonging to the action, when there is any.
+  void logActivity({
+    required String actor,
+    required String action,
+    String photoUrl = '',
+    String voiceUrl = '',
+    DateTime? time,
+  }) {
+    final entry = jsonEncode({
+      'actor': actor,
+      'action': action,
+      'photoUrl': photoUrl,
+      'voiceUrl': voiceUrl,
+      'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
+    });
+    activityLog = [...activityLog, entry];
+  }
+
+  /// Decodes [activityLog] for display. Malformed entries (older builds,
+  /// hand-edited rows) are dropped instead of throwing — a timeline must
+  /// never crash the detail screen.
+  List<Map<String, dynamic>> parseActivityLog() {
+    final entries = <Map<String, dynamic>>[];
+    for (final raw in activityLog) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) entries.add(decoded);
+      } catch (e) {
+        debugPrint('ActivityLog: skipping malformed entry: $e');
+      }
+    }
+    return entries;
+  }
 
   /// The Team Leader has signed off on this report ('physical' or 'remote').
   /// Distinct from the Owner layer ([ownerStatus]) which is driven from Supabase.

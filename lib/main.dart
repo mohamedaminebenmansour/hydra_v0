@@ -1,22 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'role.dart';
 import 'screens/home_screen.dart';
 import 'screens/team_leader_home_screen.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
 import 'services/sync_service.dart';
 
-/// The signed-in user's role, injected at build/run time:
-/// `flutter run --dart-define=USER_ROLE=team_leader`.
-///
-/// The app boots into a different home depending on it: 'subcontractor' gets
-/// the 3-button capture screen, 'team_leader' gets the Chef de Chantier
-/// dashboard. Anything else falls back to the subcontractor UI.
-const String userRole = String.fromEnvironment(
-  'USER_ROLE',
-  defaultValue: 'subcontractor',
-);
+export 'role.dart' show userRole;
 
 /// Formats a timestamp as 'YYYY-MM-DD HH:mm:ss' in local time.
 String formatTimestamp(DateTime t) {

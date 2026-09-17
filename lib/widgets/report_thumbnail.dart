@@ -20,6 +20,8 @@ class ReportThumbnail extends StatelessWidget {
     this.size,
     this.fit = BoxFit.cover,
     this.iconSize = 32,
+    this.pathOverride,
+    this.urlOverride,
   });
 
   final Report report;
@@ -30,11 +32,17 @@ class ReportThumbnail extends StatelessWidget {
   final BoxFit fit;
   final double iconSize;
 
+  /// Media source overrides. Default (null) reads the report's own photo;
+  /// the detail screen passes the TL's rejection proof paths/urls so that
+  /// media resolves through the same Hybrid-Shield logic.
+  final String? pathOverride;
+  final String? urlOverride;
+
   @override
   Widget build(BuildContext context) {
     final media = ReportLocalService.resolveMedia(
-      report.photoPath,
-      report.photoUrl,
+      pathOverride ?? report.photoPath,
+      urlOverride ?? report.photoUrl,
     );
     switch (media.origin) {
       case MediaOrigin.localFile:

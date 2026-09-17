@@ -25,6 +25,10 @@ import '../widgets/voice_play_button.dart';
 /// (or when the distance is unknown) the decision is downgraded to 'remote'.
 const double tlPhysicalRadiusMeters = 50;
 
+/// Which audio source the detail screen's shared player is playing: the
+/// subcontractor's original voice note, or the TL's rejection explanation.
+enum _AudioSource { report, rejection }
+
 /// Classifies an on-site validation from the measured distance between the
 /// report and the Team Leader.
 ///
@@ -91,6 +95,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   /// play/pause; disposed with the screen.
   AudioPlayer? _player;
   bool _isPlaying = false;
+  bool _isRejectionPlaying = false;
+
+  /// Which audio source the shared player is (or was) playing.
+  _AudioSource _audioSource = _AudioSource.report;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   StreamSubscription<Duration>? _posSub;
@@ -413,7 +421,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
           const SizedBox(height: 10),
           _giantButton(
             icon: Icons.gpp_bad,
-            label: 'REJECT (Photo + Voice)',
+            label: 'REJECT & REQUEST FIX',
             color: Colors.red.shade700,
             onPressed: _validating ? null : _rejectReport,
           ),
@@ -467,6 +475,262 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // "Fix & Resubmit" loop: the subcontractor answers a rejection.
+  // ---------------------------------------------------------------------------
+
+  /// Giant green button: the subcontractor re-captures the proof photo, the
+  /// report re-queues for sync and returns to the TL's inbox with a clean gate.
+  Future<void> _fixAndResubmit() async {
+    if (_validating) return;
+    setState(() => _validating = true);
+    try {
+      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+      if (photo == null) {
+        // Camera cancelled: leave the report rejected and untouched.
+        debugPrint('ResubmitFlow: cancelled by the user');
+        if (mounted) setState(() => _validating = false);
+        return;
+      }
+      final newPath = await _persistCapture(photo.path);
+      if (newPath.isEmpty) {
+        _failValidation('Photo capture failed');
+        return;
+      }
+
+      _report
+        ..photoPath = newPath
+        ..photoUrl = '' // force a fresh upload of the new capture
+        ..photoStatus = 'pending'
+        ..status = 'local'
+        ..dbStatus = 'pending'
+        // The old decision is void: the report re-enters the TL's queue.
+        ..tlValidatedAt = null
+        ..tlValidationType = ''
+        ..tlValidationPhotoPath = ''
+        ..tlValidationPhotoUrl = ''
+        // Keep tlRejectionPhotoPath/Url + the log: the dispute history stays.
+        ..logActivity(actor: 'sub', action: 'resubmitted');
+      await DatabaseService.saveSubStatus(_report);
+      debugPrint('ResubmitFlow: report ${_report.id} resubmitted for review');
+      if (mounted) {
+        setState(() {}); // refresh: green bar disappears, pending chip shows
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Submitted for re-verification')),
+        );
+      }
+      // Offline-first: the new photo + cleared gate are pushed when online.
+      unawaited(SyncService.syncPendingReports());
+    } catch (e, st) {
+      debugPrint('ResubmitFlow: failed: $e\\n$st');
+      _failValidation('Resubmission failed');
+    }
+  }
+
+  /// The subcontractor's giant green "FIX & RESUBMIT" action bar.
+  Widget _fixAndResubmitButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      child: SizedBox(
+        width: double.infinity,
+        height: 72,
+        child: FilledButton.icon(
+          onPressed: _validating ? null : _fixAndResubmit,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.green.shade700,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          icon: _validating
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.build_circle, size: 26),
+          label: Text(
+            _validating ? 'SUBMITTING…' : 'FIX & RESUBMIT',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The "Dispute Shield" rejection card: the TL's proof photo and spoken
+  /// explanation, framed in red so the dispute is unmissable.
+  Widget _rejectionCard(Report report) {
+    final hasVoice =
+        ReportLocalService.resolveMedia(
+          report.tlRejectionVoicePath,
+          report.tlRejectionVoiceUrl,
+        ).origin !=
+        MediaOrigin.none;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Colors.red, width: 2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.gpp_bad, color: Colors.red),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Rejected by Team Leader',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (report.tlValidatedAt != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  DateFormat(
+                    'd MMM, hh:mm a',
+                  ).format(report.tlValidatedAt!.toLocal()),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+              ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 180,
+                width: double.infinity,
+                child: ReportThumbnail(
+                  report: report,
+                  pathOverride: report.tlRejectionPhotoPath,
+                  urlOverride: report.tlRejectionPhotoUrl,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            if (hasVoice) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: _toggleRejectionPlay,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: Icon(
+                    _isRejectionPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                  ),
+                  label: Text(
+                    _isRejectionPlaying
+                        ? 'PAUSE EXPLANATION'
+                        : 'PLAY EXPLANATION',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The report's life story ("Fix & Resubmit" loop): one dot-line per entry.
+  Widget _activityTimeline(Report report) {
+    final entries = report.parseActivityLog();
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Activity',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            for (final e in entries)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      e['actor'] == 'tl'
+                          ? Icons.gavel
+                          : e['actor'] == 'owner'
+                              ? Icons.workspace_premium
+                              : Icons.engineering_outlined,
+                      size: 18,
+                      color: e['actor'] == 'tl' ? Colors.red : Colors.blueGrey,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _activityLine(e),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Human-readable line for one activity entry, e.g.
+  /// 'Team Leader rejected the report — 17 Sep, 10:12'.
+  String _activityLine(Map<String, dynamic> e) {
+    final actor = switch (e['actor']) {
+      'tl' => 'Team Leader',
+      'owner' => 'Owner',
+      _ => 'Subcontractor',
+    };
+    final action = switch (e['action']) {
+      'rejected' => 'rejected the report',
+      'resubmitted' => 'fixed & resubmitted',
+      'validated' => 'validated the report',
+      _ => e['action']?.toString() ?? 'updated the report',
+    };
+    final when = DateTime.tryParse(e['time']?.toString() ?? '');
+    final whenLabel = when == null
+        ? ''
+        : ' — ${DateFormat('d MMM, HH:mm').format(when.toLocal())}';
+    return '$actor $action$whenLabel';
+  }
+
   /// Read-only summary of the gate decision, shown once the report has been
   /// validated (so the TL sees how and when it was signed off).
   Widget _tlValidationCard(Report report) {
@@ -517,22 +781,36 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   ///
   /// "Hybrid Shield": plays the local file while it exists, otherwise streams
   /// the cloud copy (a reclaimed report keeps only its URL).
-  Future<void> _togglePlay() async {
-    if (_isPlaying) {
+  Future<void> _togglePlay() =>
+      _playVoice(_AudioSource.report, _report.voicePath, _report.voiceUrl);
+
+  /// Plays/pauses the TL's rejection voice note ("Dispute Shield") through the
+  /// same shared player, so the two sources can never talk over each other.
+  Future<void> _toggleRejectionPlay() => _playVoice(
+        _AudioSource.rejection,
+        _report.tlRejectionVoicePath,
+        _report.tlRejectionVoiceUrl,
+      );
+
+  /// Shared playback engine for both voice sources. Pausing is source-aware:
+  /// only a tap on the currently playing source pauses it.
+  Future<void> _playVoice(
+    _AudioSource source,
+    String path,
+    String url,
+  ) async {
+    if (source == _audioSource &&
+        (source == _AudioSource.report ? _isPlaying : _isRejectionPlaying)) {
       await _player?.pause();
       return;
     }
-    final media = ReportLocalService.resolveMedia(
-      _report.voicePath,
-      _report.voiceUrl,
-    );
+    final media = ReportLocalService.resolveMedia(path, url);
     if (media.origin == MediaOrigin.none) {
       // Either there is no voice note at all, or its local file is gone and
       // there is no cloud copy to stream.
-      final missingFile = _report.voicePath.isNotEmpty;
+      final missingFile = path.isNotEmpty;
       debugPrint(
-        'PlaybackFlow: no playable voice source '
-        '(path="${_report.voicePath}", url="${_report.voiceUrl}")',
+        'PlaybackFlow: no playable voice source (path="$path", url="$url")',
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -546,6 +824,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       final created = _player == null;
       final player = _player ??= AudioPlayer();
       if (created) _attachPlayer(player);
+      _audioSource = source;
       await player.setReleaseMode(ReleaseMode.stop);
       // After a track finished, restart from the beginning.
       if (_duration > Duration.zero && _position >= _duration) {
@@ -579,7 +858,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     _stateSub = player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
       setState(() {
-        _isPlaying = state == PlayerState.playing;
+        // One shared player feeds both the report voice note and the TL's
+        // rejection voice; only the active source drives its flag.
+        _isPlaying =
+            state == PlayerState.playing &&
+            _audioSource == _AudioSource.report;
+        _isRejectionPlaying =
+            state == PlayerState.playing &&
+            _audioSource == _AudioSource.rejection;
         if (state == PlayerState.completed) {
           _position = _duration; // show a full bar while it settles back
         }
@@ -590,10 +876,22 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // AppBar carries the report identity: id + submission time.
       appBar: AppBar(
         leading: const BackButtonCircle(),
-        title: const Text('Report'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Report #${_report.id}'),
+            Text(
+              DateFormat('d MMM, HH:mm').format(_report.timestamp.toLocal()),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
       ),
+      // The Execution Timeline: everything the report has been through,
+      // oldest first, infinitely scrollable.
       body: SafeArea(
         child: FutureBuilder<Report?>(
           future: _reportFuture,
@@ -609,153 +907,294 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
             // Use the fresh Isar record (latest paths), falling back to the
             // widget-supplied snapshot only for the very first frame.
             _report = latest;
-            // "Hybrid Shield": a reclaimed report keeps only its cloud URL, so
-            // whether a note exists is decided by the resolver, not the path.
-            final hasVoice =
-                ReportLocalService.resolveMedia(
-                  latest.voicePath,
-                  latest.voiceUrl,
-                ).origin !=
-                MediaOrigin.none;
-            return Column(
+            return _buildTimeline(latest);
+          },
+        ),
+      ),
+      // Pinned, never-scrolling action container (role-based, see below).
+      bottomNavigationBar: _bottomActionBar(),
+    );
+  }
+
+  /// The scrollable Execution Timeline: original submission -> TL rejection
+  /// -> resubmission -> gate summary -> location -> activity trail.
+  Widget _buildTimeline(Report report) {
+    final items = <Widget>[
+      _originalSubmissionCard(report),
+      if (report.tlValidationType == 'rejected') _rejectionCard(report),
+      if (_resubmissionAt(report) != null) _resubmissionCard(report),
+      // "Chef de Chantier Gate" decision summary (only once done, and only
+      // for acceptances â€” a rejection has its own red card above).
+      if (report.tlValidatedAt != null &&
+          report.tlValidationType != 'rejected')
+        _tlValidationCard(report),
+      _locationCard(),
+      _activityTimeline(report),
+    ];
+    // Clean rhythm: 16px between every card, 16px around the whole list.
+    final spaced = <Widget>[];
+    for (final item in items) {
+      spaced
+        ..add(item)
+        ..add(const SizedBox(height: 16));
+    }
+    return ListView(padding: const EdgeInsets.all(16), children: spaced);
+  }
+  /// Item 1 â€” the subcontractor's original submission: full-width photo,
+  /// label, and the original voice player.
+  Widget _originalSubmissionCard(Report report) {
+    final hasVoice =
+        ReportLocalService.resolveMedia(
+          report.voicePath,
+          report.voiceUrl,
+        ).origin !=
+        MediaOrigin.none;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 250,
+            width: double.infinity,
+            child: ReportThumbnail(report: report, fit: BoxFit.cover),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: ReportThumbnail(
-                    report: latest,
-                    fit: BoxFit.contain,
-                    iconSize: 80,
-                  ),
+                const Row(
+                  children: [
+                    Icon(Icons.engineering_outlined, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Submitted by Subcontractor',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                if (!hasVoice)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No voice note'),
-                  )
-                else
-                  Column(
-                    children: [
-                      VoiceEqualizer(playing: _isPlaying),
-                      // Always-visible thick progress bar with big time labels,
-                      // so playback progress is readable outdoors.
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              _fmt(_position),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: LinearProgressIndicator(
-                                value: _duration > Duration.zero
-                                    ? _position.inMilliseconds /
-                                          _duration.inMilliseconds
-                                    : 0.0,
-                                minHeight: 12,
-                                borderRadius: BorderRadius.circular(6),
-                                color: Colors.blue,
-                                backgroundColor: Colors.grey.shade300,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              _fmt(_duration),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      VoicePlayButton(
-                        playing: _isPlaying,
-                        onTap: () => _togglePlay(),
-                      ),
-                    ],
+                const SizedBox(height: 2),
+                Text(
+                  DateFormat(
+                    'd MMM, hh:mm a',
+                  ).format(report.timestamp.toLocal()),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+                if (!hasVoice) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'No voice note',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
-Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  VoiceEqualizer(playing: _isPlaying),
+                  // Thick progress bar with big time labels: readable outdoors.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.schedule, size: 20),
-                        const SizedBox(width: 8),
+                        Text(
+                          _fmt(_position),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            DateFormat(
-                              'd MMM, hh:mm a',
-                            ).format(latest.timestamp.toLocal()),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: LinearProgressIndicator(
+                            value: _duration > Duration.zero
+                                ? _position.inMilliseconds /
+                                      _duration.inMilliseconds
+                                : 0.0,
+                            minHeight: 12,
+                            borderRadius: BorderRadius.circular(6),
+                            color: Colors.blue,
+                            backgroundColor: Colors.grey.shade300,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          _fmt(_duration),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                // Clean, tappable location row — the raw coordinates stay
-                // out of sight behind the maps launcher.
-                Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: _openInMaps,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on,
-                            size: 24,
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Location Captured',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right,
-                            color: Colors.grey.shade500,
-                          ),
-                        ],
+                  VoicePlayButton(playing: _isPlaying, onTap: _togglePlay),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  /// Item 3 â€” the subcontractor's resubmission: the re-captured photo, shown
+  /// only when the activity log records a resubmission.
+  Widget _resubmissionCard(Report report) {
+    final at = _resubmissionAt(report)!;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 250,
+            width: double.infinity,
+            child: ReportThumbnail(report: report, fit: BoxFit.cover),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.build_circle, size: 20, color: Colors.green),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Resubmitted by Subcontractor',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                // "Chef de Chantier Gate" decision summary (only once done).
-                if (latest.tlValidatedAt != null) _tlValidationCard(latest),
+                const SizedBox(height: 2),
+                Text(
+                  DateFormat('d MMM, hh:mm a').format(at.toLocal()),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
               ],
-            );
-          },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The latest 'resubmitted' entry in the activity log, or null when the
+  /// subcontractor has never answered a rejection. The log is the source of
+  /// truth: a "photoPath changed" heuristic can't survive syncs and cleanups.
+  DateTime? _resubmissionAt(Report report) {
+    DateTime? at;
+    for (final e in report.parseActivityLog()) {
+      if (e['action'] == 'resubmitted') {
+        at = DateTime.tryParse(e['time']?.toString() ?? '') ??
+            at ??
+            DateTime.now();
+      }
+    }
+    return at;
+  }
+
+  /// Clean, tappable location row â€” the raw coordinates stay out of sight
+  /// behind the maps launcher.
+  Widget _locationCard() {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _openInMaps,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.location_on, size: 24, color: Colors.blue),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Location Captured',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade500),
+            ],
+          ),
         ),
       ),
-      // "Chef de Chantier Gate": the three giant TL decision buttons stay
-      // pinned to the bottom edge so they are always reachable. They only
-      // exist for Team Leaders, and only for reports still awaiting a gate
-      // decision — a subcontractor opening their own report never sees them.
-      bottomNavigationBar:
-          widget.validationMode &&
-              widget.isTeamLeader &&
-              widget.report.needsTlValidation
-          ? SafeArea(child: _tlValidationButtons())
-          : null,
+    );
+  }
+
+  /// Pinned, never-scrolling action container. Priority (first match wins):
+  ///  1. Closed by the owner -> disabled banner, nobody can act on it;
+  ///  2. Team Leader + pending gate -> the three giant decision buttons;
+  ///  3. Subcontractor + a live rejection -> the green FIX & RESUBMIT bar.
+  Widget? _bottomActionBar() {
+    final Widget? content;
+    if (_report.ownerStatus == 'validated') {
+      content = _closedBanner();
+    } else if (widget.isTeamLeader) {
+      content = widget.validationMode && widget.report.needsTlValidation
+          ? _tlValidationButtons()
+          : null;
+    } else if (_report.isTlRejected) {
+      content = _fixAndResubmitButton();
+    } else {
+      content = null;
+    }
+    if (content == null) return null;
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(child: content),
+    );
+  }
+
+  /// Disabled banner shown once the owner validated the work: the report is
+  /// closed and every action is hidden.
+  Widget _closedBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Container(
+        width: double.infinity,
+        height: 56,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.verified, color: Colors.green.shade700),
+            const SizedBox(width: 8),
+            Text(
+              'Work Validated and Closed',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: Colors.green.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

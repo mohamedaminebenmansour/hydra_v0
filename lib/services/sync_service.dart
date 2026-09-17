@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -267,14 +268,20 @@ class SyncService {
     }
   }
 
-    /// The Team Leader gate columns ("Chef de Chantier Gate"). Only populated once
-  /// a validation has actually happened, so an unvalidated report never
-  /// overwrites a remote value with an empty string / null.
-  static Map<String, dynamic> _tlValidationPayload(Report report) {
+    /// The Team Leader gate columns ("Chef de Chantier Gate"). [allowClear]
+  /// marks a push that legitimately clears the gate (the subcontractor's
+  /// "Fix & Resubmit" resets the decision so the report returns to the TL's
+  /// inbox): the type is then sent as an empty string instead of being skipped.
+  /// For a fresh unvalidated report nothing is ever sent, so a pull can never
+  /// overwrite a remote value with an empty string / null by accident.
+  static Map<String, dynamic> _tlValidationPayload(
+    Report report, {
+    bool allowClear = false,
+  }) {
     return {
       if (report.tlValidatedAt != null)
         'tl_validated_at': report.tlValidatedAt!.toUtc().toIso8601String(),
-      if (report.tlValidationType.isNotEmpty)
+      if (allowClear || report.tlValidationType.isNotEmpty)
         'tl_validation_type': report.tlValidationType,
       if (report.tlValidationPhotoUrl.isNotEmpty)
         'tl_validation_photo_url': report.tlValidationPhotoUrl,
@@ -298,6 +305,7 @@ class SyncService {
       'timestamp': report.timestamp.toUtc().toIso8601String(),
       'user_id': report.userId,
       'mobile_id': report.mobileId,
+      'activity_log': jsonEncode(report.activityLog),
       ..._tlValidationPayload(report),
     };
     final inserted = report.supabaseId.isNotEmpty
@@ -324,7 +332,15 @@ class SyncService {
   /// When the remote row has disappeared (owner deleted it), the full payload is
   /// re-inserted so the local report still reaches the cloud.
   static Future<void> _updateTlValidation(Report report) async {
-    final payload = _tlValidationPayload(report);
+    // This update path only runs for reports that already exist remotely and
+    // were locally mutated (gate decision or resubmission), so:
+    //  * allowClear: a resubmitted report legitimately clears its gate state
+    //    (tl_validation_type -> '') so it returns to the TL's inbox;
+    //  * photo_url: the subcontractor may have re-captured the proof photo;
+    //  * activity_log: the shared audit trail ("Fix & Resubmit" loop).
+    final payload = _tlValidationPayload(report, allowClear: true)
+      ..['photo_url'] = report.photoUrl
+      ..['activity_log'] = jsonEncode(report.activityLog);
     if (payload.isEmpty) return;
     final updated = await Supabase.instance.client
         .from('reports')
@@ -445,6 +461,12 @@ class SyncService {
     }
     report.tlRejectionVoiceUrl =
         (row['tl_rejection_voice_url'] ?? '').toString();
+    // "Fix & Resubmit" audit trail: remote JSONB array of entry objects ->
+    // local list of raw JSON strings (the Isar representation).
+    final remoteLog = row['activity_log'];
+    if (remoteLog is List) {
+      report.activityLog = remoteLog.map((e) => jsonEncode(e)).toList();
+    }
     await DatabaseService.saveReport(report);
     debugPrint('PullFlow: stored remote row (supabaseId=${report.supabaseId})');
   }
