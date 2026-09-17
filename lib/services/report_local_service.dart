@@ -6,6 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import '../models/report.dart';
 import 'database_service.dart';
 
+/// Where a report's photo / voice media should be read from right now.
+enum MediaOrigin { localFile, network, none }
+
 /// Local-first storage helper for reports and their media files.
 ///
 /// Every photo/voice file is persisted into the permanent application
@@ -66,4 +69,108 @@ class ReportLocalService {
   /// Reactive stream of all reports, newest first — drives the UI list.
   static Stream<List<Report>> watchReports() =>
       DatabaseService.watchAllReports();
+
+  // ---------------------------------------------------------------------------
+  // Hybrid Shield: reading media offline-first + reclaiming local disk.
+  // ---------------------------------------------------------------------------
+
+  /// Resolves where a report's media should be read from, offline-first:
+  ///  * the local file while it still exists on disk,
+  ///  * otherwise the cloud URL (cached by the UI layer),
+  ///  * otherwise nothing.
+  ///
+  /// [localPath] is historically overloaded: pulled remote rows store the
+  /// public URL in the path field. A value that is not an existing file simply
+  /// falls through to the URL branch instead of throwing.
+  static ({MediaOrigin origin, String location}) resolveMedia(
+    String localPath,
+    String url,
+  ) {
+    if (localPath.isNotEmpty && _isExistingFile(localPath)) {
+      return (origin: MediaOrigin.localFile, location: localPath);
+    }
+    if (url.isNotEmpty) return (origin: MediaOrigin.network, location: url);
+    if (localPath.isNotEmpty) {
+      // Legacy / pulled row: the "path" really is a remote URL.
+      return (origin: MediaOrigin.network, location: localPath);
+    }
+    return (origin: MediaOrigin.none, location: '');
+  }
+
+  /// Synchronous existence probe that never throws (a URL stored in the path
+  /// field, an empty string or a permission problem all mean "not a file").
+  static bool _isExistingFile(String path) {
+    try {
+      return File(path).existsSync();
+    } catch (e) {
+      debugPrint('LocalStore: existence probe failed for "$path": $e');
+      return false;
+    }
+  }
+
+  /// "Hybrid Shield": silently reclaims disk space by deleting local photo and
+  /// voice files for reports whose cloud copy is complete and which the owner
+  /// has finished with (or which are older than [olderThan]).
+  ///
+  /// Safety rules: only fully-synced reports are touched, the matching cloud
+  /// URL must be present before a file is released, and every single deletion
+  /// is guarded — a missing file, or a path that is really a URL, is harmless.
+  /// The Isar record keeps `photoUrl` / `voiceUrl` and only loses the local
+  /// paths. Returns the number of reports whose paths were cleared.
+  static Future<int> cleanUpLocalMedia({
+    Duration olderThan = const Duration(days: 7),
+  }) async {
+    try {
+      final cutoff = DateTime.now().subtract(olderThan);
+      final candidates = await DatabaseService.getMediaCleanupCandidates(
+        cutoff,
+      );
+      if (candidates.isEmpty) return 0;
+
+      var reportsCleaned = 0;
+      var filesDeleted = 0;
+      for (final report in candidates) {
+        var changed = false;
+        if (report.photoPath.isNotEmpty && report.photoUrl.isNotEmpty) {
+          if (await _deleteMediaQuietly(report.photoPath)) filesDeleted++;
+          report.photoPath = '';
+          changed = true;
+        }
+        if (report.voicePath.isNotEmpty && report.voiceUrl.isNotEmpty) {
+          if (await _deleteMediaQuietly(report.voicePath)) filesDeleted++;
+          report.voicePath = '';
+          changed = true;
+        }
+        if (changed) {
+          await DatabaseService.clearLocalMediaPaths(report);
+          reportsCleaned++;
+        }
+      }
+      debugPrint(
+        'CleanupFlow: reclaimed $filesDeleted file(s) across '
+        '$reportsCleaned report(s) (cutoff ${olderThan.inDays}d)',
+      );
+      return reportsCleaned;
+    } catch (e, st) {
+      // Disk hygiene must never break startup or sync.
+      debugPrint('CleanupFlow: local media cleanup failed: $e\n$st');
+      return 0;
+    }
+  }
+
+  /// Deletes [path] when it exists. Returns true only when a file was actually
+  /// removed; every failure (missing file, URL instead of a path, permission)
+  /// is logged and swallowed so a stale record can never crash the app.
+  static Future<bool> _deleteMediaQuietly(String path) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return false;
+      await file.delete();
+      debugPrint('CleanupFlow: deleted "$path"');
+      return true;
+    } catch (e, st) {
+      debugPrint('CleanupFlow: delete skipped for "$path": $e\n$st');
+      return false;
+    }
+  }
 }

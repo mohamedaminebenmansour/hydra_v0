@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/report.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
+import '../widgets/report_thumbnail.dart';
 import 'report_detail_screen.dart';
 
 /// Displays all locally saved Reports in a scrollable list with a colored
@@ -42,15 +41,22 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   Future<void> _openReport(Report report) async {
     // No reload needed after pop: the stream re-emits on any Isar change.
+    // Opening from the 'TO VERIFY' tab enables the Team Leader gate buttons.
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ReportDetailScreen(report: report),
+        builder: (_) => ReportDetailScreen(
+          report: report,
+          validationMode: _view == 'TO VERIFY',
+        ),
       ),
     );
   }
 
   /// True when [report] belongs to the currently selected view.
   bool _matchesView(Report report) {
+    if (_view == 'TO VERIFY') {
+      return report.needsTlValidation;
+    }
     if (_view == 'HISTORY') {
       return report.ownerStatus == 'validated' ||
           report.ownerStatus == 'acknowledged' ||
@@ -157,55 +163,6 @@ class _HistoryScreenState extends State<HistoryScreen>
     await SyncService.retryReport(report.id);
   }
 
-  /// Thumbnail that works offline (local file) and falls back to a network
-  /// image for pulled remote records.
-  Widget _reportThumb(Report report, {double size = 80}) {
-    final path = report.photoPath;
-    if (path.isEmpty) {
-      return Container(
-        width: size,
-        height: size,
-        color: Colors.grey.shade200,
-        child: const Icon(Icons.image_not_supported, size: 32),
-      );
-    }
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return Image.network(
-        path,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Container(
-          width: size,
-          height: size,
-          color: Colors.grey.shade300,
-          child: const Icon(Icons.broken_image, size: 32),
-        ),
-      );
-    }
-    final exists = File(path).existsSync();
-    if (!exists) {
-      return Container(
-        width: size,
-        height: size,
-        color: Colors.grey.shade300,
-        child: const Icon(Icons.image_not_supported, size: 32),
-      );
-    }
-    return Image.file(
-      File(path),
-      width: size,
-      height: size,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Container(
-        width: size,
-        height: size,
-        color: Colors.grey.shade300,
-        child: const Icon(Icons.broken_image, size: 32),
-      ),
-    );
-  }
-
   /// Status avatar (CircleAvatar + caption) remembered from the owner's
   /// decision. Dominant icon, serving also as a first-time onboarding cue.
   Widget _statusAvatar(Report report) => _statusAvatarFor(report.ownerStatus);
@@ -258,7 +215,7 @@ class _HistoryScreenState extends State<HistoryScreen>
   /// timestamp on the right, and a clean status row underneath.
   Widget _trafficCard(Report report) {
     final borderColor = _borderColorForStatus(report.ownerStatus);
-    final thumb = _reportThumb(report, size: 100);
+    final thumb = ReportThumbnail(report: report, size: 100);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -347,26 +304,44 @@ class _HistoryScreenState extends State<HistoryScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Segmented control: ACTIVE vs HISTORY.
+            // Segmented control: ACTIVE vs HISTORY vs TO VERIFY (the Team
+            // Leader "Chef de Chantier Gate" queue). Scrollable so the three
+            // segments can never overflow a narrow phone screen.
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'ACTIVE',
-                    label: Text('ACTIVE'),
-                    icon: Icon(Icons.fiber_new),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Center(
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: 'ACTIVE',
+                        label: Text('ACTIVE'),
+                        icon: Icon(Icons.fiber_new),
+                      ),
+                      ButtonSegment(
+                        value: 'HISTORY',
+                        label: Text('HISTORY'),
+                        icon: Icon(Icons.history),
+                      ),
+                      ButtonSegment(
+                        value: 'TO VERIFY',
+                        label: Text('TO VERIFY'),
+                        icon: Icon(Icons.fact_check),
+                      ),
+                    ],
+                    selected: {_view},
+                    onSelectionChanged: (selection) {
+                      setState(() {
+                        _view = selection.first;
+                        // Problem reports never pass through the gate, so a
+                        // leftover 'Problem' type filter would always leave the
+                        // TO VERIFY list empty. Reset it on entry.
+                        if (_view == 'TO VERIFY') _filter = 'All';
+                      });
+                    },
                   ),
-                  ButtonSegment(
-                    value: 'HISTORY',
-                    label: Text('HISTORY'),
-                    icon: Icon(Icons.history),
-                  ),
-                ],
-                selected: {_view},
-                onSelectionChanged: (selection) {
-                  setState(() => _view = selection.first);
-                },
+                ),
               ),
             ),
             // Type filter chips.
@@ -411,9 +386,11 @@ class _HistoryScreenState extends State<HistoryScreen>
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          _view == 'ACTIVE'
-                              ? 'No active items. All caught up!'
-                              : 'No history yet.',
+                          switch (_view) {
+                            'ACTIVE' => 'No active items. All caught up!',
+                            'TO VERIFY' => 'Nothing to verify.',
+                            _ => 'No history yet.',
+                          },
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 18,

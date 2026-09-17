@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -197,16 +197,66 @@ class SyncService {
         debugPrint('SyncFlow: report ${report.id} voice synced');
       }
 
-      // 3) DB row — only when media are in place.
+      // 3) TL validation proof photo ("Chef de Chantier Gate"). Only present when the
+      // Team Leader validated on site while offline. The remote URL is persisted
+      // as soon as it exists, so a retry never re-uploads the file.
+      if (report.tlValidationPhotoPath.isNotEmpty &&
+          report.tlValidationPhotoUrl.isEmpty) {
+        report.tlValidationPhotoUrl = await _upload(
+          'photo',
+          report.tlValidationPhotoPath,
+          'image/jpeg',
+        );
+        await DatabaseService.saveSubStatus(report);
+        debugPrint('SyncFlow: report ${report.id} TL validation photo synced');
+      }
+
+      // 3b) "Dispute Shield": when the TL rejected the report, the mandatory proof
+      // photo and voice note must reach the cloud too. Each URL is persisted on
+      // success, so a retry never re-uploads the same file.
+      if (report.isTlRejected) {
+        if (report.tlRejectionPhotoPath.isNotEmpty &&
+            report.tlRejectionPhotoUrl.isEmpty) {
+          report.tlRejectionPhotoUrl = await _upload(
+            'photo',
+            report.tlRejectionPhotoPath,
+            'image/jpeg',
+          );
+          await DatabaseService.saveSubStatus(report);
+          debugPrint(
+            'SyncFlow: report ${report.id} TL rejection photo synced',
+          );
+        }
+        if (report.tlRejectionVoicePath.isNotEmpty &&
+            report.tlRejectionVoiceUrl.isEmpty) {
+          report.tlRejectionVoiceUrl = await _upload(
+            'voice',
+            report.tlRejectionVoicePath,
+            'audio/mp4',
+          );
+          await DatabaseService.saveSubStatus(report);
+          debugPrint(
+            'SyncFlow: report ${report.id} TL rejection voice synced',
+          );
+        }
+      }
+
+      // 4) DB row — only when media are in place.
       if (report.isPhotoSynced && report.isVoiceSynced) {
         if (report.dbStatus != 'synced') {
-          await _insertRow(report);
+          if (report.supabaseId.isNotEmpty) {
+            // The report already exists remotely: push only the gate decision
+            // so re-validating never creates a second report row.
+            await _updateTlValidation(report);
+          } else {
+            await _insertRow(report);
+          }
           report.dbStatus = 'synced';
           await DatabaseService.saveSubStatus(report);
         }
       }
 
-      // 4) All pieces done → fully synced.
+      // 5) All pieces done → fully synced.
       if (report.isFullySynced) {
         await DatabaseService.markSynced(report);
         debugPrint('SyncFlow: report ${report.id} fully synced');
@@ -217,9 +267,27 @@ class SyncService {
     }
   }
 
+    /// The Team Leader gate columns ("Chef de Chantier Gate"). Only populated once
+  /// a validation has actually happened, so an unvalidated report never
+  /// overwrites a remote value with an empty string / null.
+  static Map<String, dynamic> _tlValidationPayload(Report report) {
+    return {
+      if (report.tlValidatedAt != null)
+        'tl_validated_at': report.tlValidatedAt!.toUtc().toIso8601String(),
+      if (report.tlValidationType.isNotEmpty)
+        'tl_validation_type': report.tlValidationType,
+      if (report.tlValidationPhotoUrl.isNotEmpty)
+        'tl_validation_photo_url': report.tlValidationPhotoUrl,
+      if (report.tlRejectionPhotoUrl.isNotEmpty)
+        'tl_rejection_photo_url': report.tlRejectionPhotoUrl,
+      if (report.tlRejectionVoiceUrl.isNotEmpty)
+        'tl_rejection_voice_url': report.tlRejectionVoiceUrl,
+    };
+  }
+
   /// Inserts (or upserts when supabaseId exists) the metadata row.
   static Future<void> _insertRow(Report report) async {
-    final payload = {
+    final payload = <String, dynamic>{
       'local_id': report.id.toString(),
       'type': report.type,
       'photo_url': report.photoUrl,
@@ -230,6 +298,7 @@ class SyncService {
       'timestamp': report.timestamp.toUtc().toIso8601String(),
       'user_id': report.userId,
       'mobile_id': report.mobileId,
+      ..._tlValidationPayload(report),
     };
     final inserted = report.supabaseId.isNotEmpty
         ? await Supabase.instance.client
@@ -245,6 +314,34 @@ class SyncService {
     report.supabaseId = (inserted['id'] ?? '').toString();
     debugPrint(
       'SyncFlow: report ${report.id} row upserted (remote id=${report.supabaseId})',
+    );
+  }
+
+  /// Pushes only the Team Leader gate decision for a report that already has a
+  /// remote row. Used when a re-validation re-queues an already-synced report:
+  /// a plain insert would duplicate the row, so we update by remote id instead.
+  ///
+  /// When the remote row has disappeared (owner deleted it), the full payload is
+  /// re-inserted so the local report still reaches the cloud.
+  static Future<void> _updateTlValidation(Report report) async {
+    final payload = _tlValidationPayload(report);
+    if (payload.isEmpty) return;
+    final updated = await Supabase.instance.client
+        .from('reports')
+        .update(payload)
+        .eq('id', report.supabaseId)
+        .select('id');
+    if (updated.isEmpty) {
+      debugPrint(
+        'SyncFlow: report ${report.id} remote row ${report.supabaseId} is '
+        'gone — re-inserting',
+      );
+      await _insertRow(report);
+      return;
+    }
+    debugPrint(
+      'SyncFlow: report ${report.id} TL validation pushed '
+      '(remote id=${report.supabaseId})',
     );
   }
 
@@ -328,6 +425,26 @@ class SyncService {
       ..voiceStatus = 'synced'
       ..dbStatus = 'synced'
       ..supabaseId = (row['id'] ?? '').toString();
+    // "Chef de Chantier Gate": mirror the TL validation decision. The remote
+    // photo URL is stored in the path field too (same overload used for
+    // photo_url), so [ReportLocalService.resolveMedia] can display it.
+    if (row['tl_validated_at'] != null) {
+      report.tlValidatedAt = DateTime.parse(
+        row['tl_validated_at'].toString(),
+      ).toLocal();
+    }
+    report.tlValidationType = (row['tl_validation_type'] ?? '').toString();
+    final tlPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString();
+    report.tlValidationPhotoUrl = tlPhotoUrl;
+    report.tlValidationPhotoPath = tlPhotoUrl;
+    // "Dispute Shield" rejection proof media (pulled as remote URLs).
+    final tlRejPhotoUrl = (row['tl_rejection_photo_url'] ?? '').toString();
+    report.tlRejectionPhotoUrl = tlRejPhotoUrl;
+    if (tlRejPhotoUrl.isNotEmpty) {
+      report.tlRejectionPhotoPath = tlRejPhotoUrl;
+    }
+    report.tlRejectionVoiceUrl =
+        (row['tl_rejection_voice_url'] ?? '').toString();
     await DatabaseService.saveReport(report);
     debugPrint('PullFlow: stored remote row (supabaseId=${report.supabaseId})');
   }

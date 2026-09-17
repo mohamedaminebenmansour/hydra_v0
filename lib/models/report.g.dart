@@ -80,31 +80,81 @@ const ReportSchema = CollectionSchema(
       name: r'photoUrl',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 15, name: r'status', type: IsarType.string),
+    r'problemCategory': PropertySchema(
+      id: 15,
+      name: r'problemCategory',
+      type: IsarType.string,
+    ),
+    r'status': PropertySchema(id: 16, name: r'status', type: IsarType.string),
     r'supabaseId': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
-    r'type': PropertySchema(id: 18, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 19, name: r'userId', type: IsarType.string),
-    r'voicePath': PropertySchema(
+    r'tlRejectionPhotoPath': PropertySchema(
+      id: 19,
+      name: r'tlRejectionPhotoPath',
+      type: IsarType.string,
+    ),
+    r'tlRejectionPhotoUrl': PropertySchema(
       id: 20,
+      name: r'tlRejectionPhotoUrl',
+      type: IsarType.string,
+    ),
+    r'tlRejectionVoicePath': PropertySchema(
+      id: 21,
+      name: r'tlRejectionVoicePath',
+      type: IsarType.string,
+    ),
+    r'tlRejectionVoiceUrl': PropertySchema(
+      id: 22,
+      name: r'tlRejectionVoiceUrl',
+      type: IsarType.string,
+    ),
+    r'tlValidatedAt': PropertySchema(
+      id: 23,
+      name: r'tlValidatedAt',
+      type: IsarType.dateTime,
+    ),
+    r'tlValidationPhotoPath': PropertySchema(
+      id: 24,
+      name: r'tlValidationPhotoPath',
+      type: IsarType.string,
+    ),
+    r'tlValidationPhotoUrl': PropertySchema(
+      id: 25,
+      name: r'tlValidationPhotoUrl',
+      type: IsarType.string,
+    ),
+    r'tlValidationType': PropertySchema(
+      id: 26,
+      name: r'tlValidationType',
+      type: IsarType.string,
+    ),
+    r'tlValidatorId': PropertySchema(
+      id: 27,
+      name: r'tlValidatorId',
+      type: IsarType.string,
+    ),
+    r'type': PropertySchema(id: 28, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 29, name: r'userId', type: IsarType.string),
+    r'voicePath': PropertySchema(
+      id: 30,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 21,
+      id: 31,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 22,
+      id: 32,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -137,8 +187,17 @@ int _reportEstimateSize(
   bytesCount += 3 + object.photoPath.length * 3;
   bytesCount += 3 + object.photoStatus.length * 3;
   bytesCount += 3 + object.photoUrl.length * 3;
+  bytesCount += 3 + object.problemCategory.length * 3;
   bytesCount += 3 + object.status.length * 3;
   bytesCount += 3 + object.supabaseId.length * 3;
+  bytesCount += 3 + object.tlRejectionPhotoPath.length * 3;
+  bytesCount += 3 + object.tlRejectionPhotoUrl.length * 3;
+  bytesCount += 3 + object.tlRejectionVoicePath.length * 3;
+  bytesCount += 3 + object.tlRejectionVoiceUrl.length * 3;
+  bytesCount += 3 + object.tlValidationPhotoPath.length * 3;
+  bytesCount += 3 + object.tlValidationPhotoUrl.length * 3;
+  bytesCount += 3 + object.tlValidationType.length * 3;
+  bytesCount += 3 + object.tlValidatorId.length * 3;
   bytesCount += 3 + object.type.length * 3;
   bytesCount += 3 + object.userId.length * 3;
   bytesCount += 3 + object.voicePath.length * 3;
@@ -168,14 +227,24 @@ void _reportSerialize(
   writer.writeString(offsets[12], object.photoPath);
   writer.writeString(offsets[13], object.photoStatus);
   writer.writeString(offsets[14], object.photoUrl);
-  writer.writeString(offsets[15], object.status);
-  writer.writeString(offsets[16], object.supabaseId);
-  writer.writeDateTime(offsets[17], object.timestamp);
-  writer.writeString(offsets[18], object.type);
-  writer.writeString(offsets[19], object.userId);
-  writer.writeString(offsets[20], object.voicePath);
-  writer.writeString(offsets[21], object.voiceStatus);
-  writer.writeString(offsets[22], object.voiceUrl);
+  writer.writeString(offsets[15], object.problemCategory);
+  writer.writeString(offsets[16], object.status);
+  writer.writeString(offsets[17], object.supabaseId);
+  writer.writeDateTime(offsets[18], object.timestamp);
+  writer.writeString(offsets[19], object.tlRejectionPhotoPath);
+  writer.writeString(offsets[20], object.tlRejectionPhotoUrl);
+  writer.writeString(offsets[21], object.tlRejectionVoicePath);
+  writer.writeString(offsets[22], object.tlRejectionVoiceUrl);
+  writer.writeDateTime(offsets[23], object.tlValidatedAt);
+  writer.writeString(offsets[24], object.tlValidationPhotoPath);
+  writer.writeString(offsets[25], object.tlValidationPhotoUrl);
+  writer.writeString(offsets[26], object.tlValidationType);
+  writer.writeString(offsets[27], object.tlValidatorId);
+  writer.writeString(offsets[28], object.type);
+  writer.writeString(offsets[29], object.userId);
+  writer.writeString(offsets[30], object.voicePath);
+  writer.writeString(offsets[31], object.voiceStatus);
+  writer.writeString(offsets[32], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -195,14 +264,24 @@ Report _reportDeserialize(
   object.photoPath = reader.readString(offsets[12]);
   object.photoStatus = reader.readString(offsets[13]);
   object.photoUrl = reader.readString(offsets[14]);
-  object.status = reader.readString(offsets[15]);
-  object.supabaseId = reader.readString(offsets[16]);
-  object.timestamp = reader.readDateTime(offsets[17]);
-  object.type = reader.readString(offsets[18]);
-  object.userId = reader.readString(offsets[19]);
-  object.voicePath = reader.readString(offsets[20]);
-  object.voiceStatus = reader.readString(offsets[21]);
-  object.voiceUrl = reader.readString(offsets[22]);
+  object.problemCategory = reader.readString(offsets[15]);
+  object.status = reader.readString(offsets[16]);
+  object.supabaseId = reader.readString(offsets[17]);
+  object.timestamp = reader.readDateTime(offsets[18]);
+  object.tlRejectionPhotoPath = reader.readString(offsets[19]);
+  object.tlRejectionPhotoUrl = reader.readString(offsets[20]);
+  object.tlRejectionVoicePath = reader.readString(offsets[21]);
+  object.tlRejectionVoiceUrl = reader.readString(offsets[22]);
+  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[23]);
+  object.tlValidationPhotoPath = reader.readString(offsets[24]);
+  object.tlValidationPhotoUrl = reader.readString(offsets[25]);
+  object.tlValidationType = reader.readString(offsets[26]);
+  object.tlValidatorId = reader.readString(offsets[27]);
+  object.type = reader.readString(offsets[28]);
+  object.userId = reader.readString(offsets[29]);
+  object.voicePath = reader.readString(offsets[30]);
+  object.voiceStatus = reader.readString(offsets[31]);
+  object.voiceUrl = reader.readString(offsets[32]);
   return object;
 }
 
@@ -248,9 +327,9 @@ P _reportDeserializeProp<P>(
     case 16:
       return (reader.readString(offset)) as P;
     case 17:
-      return (reader.readDateTime(offset)) as P;
-    case 18:
       return (reader.readString(offset)) as P;
+    case 18:
+      return (reader.readDateTime(offset)) as P;
     case 19:
       return (reader.readString(offset)) as P;
     case 20:
@@ -258,6 +337,26 @@ P _reportDeserializeProp<P>(
     case 21:
       return (reader.readString(offset)) as P;
     case 22:
+      return (reader.readString(offset)) as P;
+    case 23:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 24:
+      return (reader.readString(offset)) as P;
+    case 25:
+      return (reader.readString(offset)) as P;
+    case 26:
+      return (reader.readString(offset)) as P;
+    case 27:
+      return (reader.readString(offset)) as P;
+    case 28:
+      return (reader.readString(offset)) as P;
+    case 29:
+      return (reader.readString(offset)) as P;
+    case 30:
+      return (reader.readString(offset)) as P;
+    case 31:
+      return (reader.readString(offset)) as P;
+    case 32:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1571,6 +1670,154 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  problemCategoryGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'problemCategory',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'problemCategory',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'problemCategory',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> problemCategoryIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'problemCategory', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  problemCategoryIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'problemCategory', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterFilterCondition> statusEqualTo(
     String value, {
     bool caseSensitive = true,
@@ -1918,6 +2165,1239 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlRejectionPhotoPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlRejectionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlRejectionPhotoPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlRejectionPhotoPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlRejectionPhotoPath',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlRejectionPhotoUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlRejectionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlRejectionPhotoUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlRejectionPhotoUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionPhotoUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlRejectionPhotoUrl',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlRejectionVoicePath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlRejectionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlRejectionVoicePath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlRejectionVoicePath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoicePathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlRejectionVoicePath',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlRejectionVoiceUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlRejectionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlRejectionVoiceUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlRejectionVoiceUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlRejectionVoiceUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlRejectionVoiceUrl',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'tlValidatedAt'),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'tlValidatedAt'),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtEqualTo(
+    DateTime? value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlValidatedAt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlValidatedAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlValidatedAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatedAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlValidatedAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlValidationPhotoPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlValidationPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlValidationPhotoPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlValidationPhotoPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlValidationPhotoPath',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlValidationPhotoUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlValidationPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlValidationPhotoUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlValidationPhotoUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationPhotoUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'tlValidationPhotoUrl',
+          value: '',
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationTypeGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlValidationType',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationTypeStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlValidationType',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidationTypeMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlValidationType',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationTypeIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlValidationType', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidationTypeIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'tlValidationType', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'tlValidatorId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'tlValidatorId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'tlValidatorId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> tlValidatorIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'tlValidatorId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  tlValidatorIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'tlValidatorId', value: ''),
       );
     });
   }
@@ -2838,6 +4318,18 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> sortByProblemCategory() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'problemCategory', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByProblemCategoryDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'problemCategory', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByStatus() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'status', Sort.asc);
@@ -2871,6 +4363,114 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
   QueryBuilder<Report, Report, QAfterSortBy> sortByTimestampDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionVoicePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoicePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionVoicePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoicePath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionVoiceUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoiceUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlRejectionVoiceUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoiceUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidationTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationType', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidatorId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatorId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByTlValidatorIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatorId', Sort.desc);
     });
   }
 
@@ -3128,6 +4728,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByProblemCategory() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'problemCategory', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByProblemCategoryDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'problemCategory', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByStatus() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'status', Sort.asc);
@@ -3161,6 +4773,114 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
   QueryBuilder<Report, Report, QAfterSortBy> thenByTimestampDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionVoicePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoicePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionVoicePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoicePath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionVoiceUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoiceUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlRejectionVoiceUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlRejectionVoiceUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidatedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationType() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationType', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidationTypeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidationType', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidatorId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatorId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByTlValidatorIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'tlValidatorId', Sort.desc);
     });
   }
 
@@ -3328,6 +5048,17 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctByProblemCategory({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'problemCategory',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByStatus({
     bool caseSensitive = true,
   }) {
@@ -3347,6 +5078,100 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
   QueryBuilder<Report, Report, QDistinct> distinctByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'timestamp');
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlRejectionPhotoPath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlRejectionPhotoPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlRejectionPhotoUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlRejectionPhotoUrl',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlRejectionVoicePath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlRejectionVoicePath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlRejectionVoiceUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlRejectionVoiceUrl',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlValidatedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'tlValidatedAt');
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlValidationPhotoPath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlValidationPhotoPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlValidationPhotoUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlValidationPhotoUrl',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlValidationType({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlValidationType',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByTlValidatorId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'tlValidatorId',
+        caseSensitive: caseSensitive,
+      );
     });
   }
 
@@ -3488,6 +5313,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
     });
   }
 
+  QueryBuilder<Report, String, QQueryOperations> problemCategoryProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'problemCategory');
+    });
+  }
+
   QueryBuilder<Report, String, QQueryOperations> statusProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'status');
@@ -3503,6 +5334,64 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, DateTime, QQueryOperations> timestampProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'timestamp');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations>
+  tlRejectionPhotoPathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlRejectionPhotoPath');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> tlRejectionPhotoUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlRejectionPhotoUrl');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations>
+  tlRejectionVoicePathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlRejectionVoicePath');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> tlRejectionVoiceUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlRejectionVoiceUrl');
+    });
+  }
+
+  QueryBuilder<Report, DateTime?, QQueryOperations> tlValidatedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlValidatedAt');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations>
+  tlValidationPhotoPathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlValidationPhotoPath');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations>
+  tlValidationPhotoUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlValidationPhotoUrl');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> tlValidationTypeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlValidationType');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> tlValidatorIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'tlValidatorId');
     });
   }
 

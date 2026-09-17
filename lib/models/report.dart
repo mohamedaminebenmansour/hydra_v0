@@ -1,4 +1,4 @@
-import 'package:isar_community/isar.dart';
+﻿import 'package:isar_community/isar.dart';
 
 part 'report.g.dart';
 
@@ -66,6 +66,67 @@ class Report {
   /// One of: 'general', 'machine', 'material_missing', 'soil', 'external'.
   String problemCategory = 'general';
 
+  // ---------------------------------------------------------------------------
+  // "Chef de Chantier Gate": the Team Leader verification step.
+  // ---------------------------------------------------------------------------
+
+  /// When the Team Leader validated this report. Null while still awaiting
+  /// verification (the report then shows up under the History 'TO VERIFY' tab).
+  DateTime? tlValidatedAt;
+
+  /// Identifier of the Team Leader who validated the report.
+  String tlValidatorId = '';
+
+  /// How the validation happened. One of: 'physical' (TL was within 50 m of the
+  /// report), 'remote' (photo-only, or the TL wasn't on the exact spot),
+  /// 'rejected' ("Dispute Shield": the TL rejected and asked for a fix), or ''
+  /// when the report has not been validated yet.
+  String tlValidationType = '';
+
+  /// Path to the TL's proof photo on the local filesystem. Empty for
+  /// remote-only validations; kept so an offline validation can be uploaded by
+  /// the sync flow later (mirrors [photoPath] -> [photoUrl]).
+  String tlValidationPhotoPath = '';
+
+  /// Public URL of the TL's proof photo returned by Supabase storage after a
+  /// successful upload. Persisted so a retry never re-uploads the same file.
+  String tlValidationPhotoUrl = '';
+
+  /// Local path of the "Dispute Shield" rejection proof photo, captured when the
+  /// TL rejects a report. Uploaded by the sync flow to
+  /// [tlRejectionPhotoUrl]; empty until a rejection happens.
+  String tlRejectionPhotoPath = '';
+
+  /// Local path of the "Dispute Shield" rejection voice note, captured when the
+  /// TL rejects a report. Uploaded by the sync flow to
+  /// [tlRejectionVoiceUrl]; empty until a rejection happens.
+  String tlRejectionVoicePath = '';
+
+  /// Remote URL of the "Dispute Shield" rejection proof photo once uploaded.
+  String tlRejectionPhotoUrl = '';
+
+  /// Remote URL of the "Dispute Shield" rejection voice note once uploaded.
+  String tlRejectionVoiceUrl = '';
+
+  /// True when this report still needs a Team Leader gate decision.
+  ///
+  /// Only 'work' and 'material' reports pass through the gate; 'problem'
+  /// reports stay on the reporting flow and are never gated.
+  @ignore
+  bool get needsTlValidation =>
+      (type == 'work' || type == 'material') && tlValidatedAt == null;
+
+  /// 'Dispute Shield': a Team Leader rejected this report and asked for a fix.
+  /// This is a TL-layer decision and never touches [ownerStatus].
+  @ignore
+  bool get isTlRejected => tlValidationType == 'rejected';
+
+  /// The Team Leader has signed off on this report ('physical' or 'remote').
+  /// Distinct from the Owner layer ([ownerStatus]) which is driven from Supabase.
+  @ignore
+  bool get isTlVerified =>
+      tlValidationType == 'physical' || tlValidationType == 'remote';
+
   /// True when the photo upload has been completed (local file uploaded).
   bool get isPhotoSynced => photoStatus == 'synced';
   bool get isVoiceSynced =>
@@ -91,4 +152,23 @@ class Report {
     if (status == 'failed') return SyncState.failed;
     return SyncState.local;
   }
+
+  /// Owner decisions that mean the field team is done with a report, so the
+  /// local media files are no longer the working copy.
+  static const Set<String> terminalOwnerStatuses = {
+    'validated',
+    'acknowledged',
+    'rejected',
+  };
+
+  /// True when this report's local media may be reclaimed ("Hybrid Shield"):
+  /// the cloud copy is complete ([syncState] is `synced`) AND either the owner
+  /// has finished with the report or it is older than [cutoff].
+  ///
+  /// [syncState] is `@ignore`, so this can never be used inside an Isar filter
+  /// — it is evaluated in Dart after a cheap `status` pre-filter.
+  bool isMediaReclaimable(DateTime cutoff) =>
+      syncState == SyncState.synced &&
+      (terminalOwnerStatuses.contains(ownerStatus) ||
+          timestamp.isBefore(cutoff));
 }

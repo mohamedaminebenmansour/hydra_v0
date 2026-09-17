@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -38,7 +39,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    checkOwnerUpdates();
+    unawaited(_startupMaintenance());
+  }
+
+  /// Silent startup maintenance: pull the owner's decisions first (so a report
+  /// the owner just validated becomes reclaimable immediately), then run the
+  /// "Hybrid Shield" disk cleanup. Both steps swallow their own errors, so a
+  /// failure can never block or crash the first frame.
+  Future<void> _startupMaintenance() async {
+    await checkOwnerUpdates();
+    await ReportLocalService.cleanUpLocalMedia();
   }
 
   /// Smart Pull-on-Open: pull the owner's decisions from Supabase (when

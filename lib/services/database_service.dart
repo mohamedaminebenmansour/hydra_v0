@@ -127,6 +127,53 @@ class DatabaseService {
     return _isar.reports.where().sortByTimestampDesc().findAll();
   }
 
+  /// Reports whose local media may be reclaimed: the cloud copy is complete
+  /// and the owner has finished with them, or they are older than [cutoff].
+  ///
+  /// [Report.syncState] is `@ignore` (computed), so it can never appear in an
+  /// Isar filter: we pre-filter on the persisted `status` column — the same
+  /// cheap pattern used by [watchPendingCount] — and finish the evaluation in
+  /// Dart via [Report.isMediaReclaimable].
+  static Future<List<Report>> getMediaCleanupCandidates(
+    DateTime cutoff,
+  ) async {
+    if (!isInitialized) return const <Report>[];
+    final synced = await _isar.reports
+        .filter()
+        .statusEqualTo('synced')
+        .findAll();
+    return synced.where((r) => r.isMediaReclaimable(cutoff)).toList();
+  }
+
+  /// Persist a report after its local media files were released. The cloud URLs
+  /// ([Report.photoUrl] / [Report.voiceUrl]) are intentionally kept.
+  static Future<void> clearLocalMediaPaths(Report report) async {
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint(
+      'CleanupFlow: report ${report.id} local media released '
+      '(photoUrl=${report.photoUrl}, voiceUrl=${report.voiceUrl})',
+    );
+  }
+
+  /// Persist a Team Leader validation decision ("Chef de Chantier Gate") and
+  /// re-queue the report for a cloud push.
+  ///
+  /// [Report.status] / [Report.dbStatus] are deliberately reset to a pending
+  /// state so [SyncService] picks the report up again even when it was already
+  /// fully synced before validation. The already-synced media sub-statuses are
+  /// preserved, so the next push only uploads the TL proof photo (if any) and
+  /// upserts the remote row via its existing [Report.supabaseId].
+  static Future<void> markTlValidated(Report report) async {
+    report.tlValidatedAt = DateTime.now();
+    report.dbStatus = 'pending';
+    report.status = 'local';
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint(
+      'TlGate: report ${report.id} validated '
+      '(type=${report.tlValidationType}, validator=${report.tlValidatorId})',
+    );
+  }
+
   /// Update a report's owner status (pulled from Supabase) and stamp when it
   /// changed, so the home-screen badge can count fresh 24h updates.
   static Future<void> updateOwnerStatus(
