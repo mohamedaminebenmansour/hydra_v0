@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -18,15 +17,12 @@ import '../services/database_service.dart';
 import '../services/report_local_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/back_button_circle.dart';
+import '../widgets/timeline_audio_player.dart';
 
 /// Radius (in metres) within which an on-site Team Leader validation counts as
 /// 'physical' — i.e. the TL really was standing on the report's spot. Beyond it
 /// (or when the distance is unknown) the decision is downgraded to 'remote'.
 const double tlPhysicalRadiusMeters = 50;
-
-/// Which audio source the detail screen's shared player is playing: the
-/// subcontractor's original voice note, or the TL's rejection explanation.
-enum _AudioSource { report }
 
 /// Classifies an on-site validation from the measured distance between the
 /// report and the Team Leader.
@@ -90,24 +86,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   /// buttons so a double tap can never validate the same report twice.
   bool _validating = false;
 
-  /// Audio player + visual feedback state. Created once, reused for every
-  /// play/pause; disposed with the screen.
-  AudioPlayer? _player;
-  bool _isPlaying = false;
-
-  /// Which audio source the shared player is (or was) playing.
-  _AudioSource _audioSource = _AudioSource.report;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-  StreamSubscription<Duration>? _posSub;
-  StreamSubscription<Duration>? _durSub;
-  StreamSubscription<PlayerState>? _stateSub;
-
-  /// Tracks the timeline event voice currently being played so the correct
-  /// bubble shows its play/pause state without colliding with the main report
-  /// voice button.
-  String? _playingEventVoicePath;
-
   @override
   void initState() {
     super.initState();
@@ -119,10 +97,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _posSub?.cancel();
-    _durSub?.cancel();
-    _stateSub?.cancel();
-    _player?.dispose();
     super.dispose();
   }
 
@@ -478,8 +452,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // "Fix & Resubmit" loop: the subcontractor answers a rejection.
+  // "Fix & Resubmit" capture sheet: photo + optional voice note.
   // ---------------------------------------------------------------------------
+
+  /// Bottom sheet that lets the subcontractor capture a new proof photo and
+  /// record an optional voice note before resubmitting. Returns the captured
+  /// media paths, or null if the user cancels.
+  Future<({String photoPath, String? voicePath})?> _showResubmitSheet() async {
+    if (!mounted) return null;
+    return await showModalBottomSheet<({String photoPath, String? voicePath})>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ResubmitCaptureSheet(),
+    );
+  }
 
   /// Giant green button: the subcontractor re-captures the proof photo, the
   /// report re-queues for sync and returns to the TL's inbox with a clean gate.
@@ -487,18 +474,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     if (_validating) return;
     setState(() => _validating = true);
     try {
-      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-      if (photo == null) {
-        // Camera cancelled: leave the report rejected and untouched.
+      final captured = await _showResubmitSheet();
+      if (captured == null || captured.photoPath.isEmpty) {
         debugPrint('ResubmitFlow: cancelled by the user');
         if (mounted) setState(() => _validating = false);
         return;
       }
-      final newPath = await _persistCapture(photo.path);
-      if (newPath.isEmpty) {
-        _failValidation('Photo capture failed');
-        return;
-      }
+
+      final newPhotoPath = captured.photoPath;
+      final newVoicePath = captured.voicePath ?? '';
 
       final oldPhotoPath = _report.photoPath;
       final oldVoicePath = _report.voicePath;
@@ -509,9 +493,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         voiceUrl: oldVoicePath,
       );
       _report
-        ..photoPath = newPath
+        ..photoPath = newPhotoPath
+        ..voicePath = newVoicePath
         ..photoUrl = '' // force a fresh upload of the new capture
+        ..voiceUrl = ''
         ..photoStatus = 'pending'
+        ..voiceStatus = 'pending'
         ..status = 'local'
         ..dbStatus = 'pending'
         // The old decision is void: the report re-enters the TL's queue.
@@ -532,7 +519,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
       // Offline-first: the new photo + cleared gate are pushed when online.
       unawaited(SyncService.syncPendingReports());
     } catch (e, st) {
-      debugPrint('ResubmitFlow: failed: $e\\n$st');
+      debugPrint('ResubmitFlow: failed: $e\n$st');
       _failValidation('Resubmission failed');
     }
   }
@@ -621,66 +608,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
-  /// Plays a voice note attached to a specific timeline event. Pauses if the
-  /// same event voice is already active; otherwise starts playback and stops
-  /// any other source.
-  Future<void> _playEventVoice(String path, String url) async {
-    if (_playingEventVoicePath == path && _isPlaying) {
-      await _player?.pause();
-      _playingEventVoicePath = null;
-      return;
-    }
-    final media = ReportLocalService.resolveMedia(path, url);
-    if (media.origin == MediaOrigin.none) return;
-    try {
-      final created = _player == null;
-      final player = _player ??= AudioPlayer();
-      if (created) _attachPlayer(player);
-      _audioSource = _AudioSource.report;
-      _playingEventVoicePath = path;
-      await player.setReleaseMode(ReleaseMode.stop);
-      if (_duration > Duration.zero && _position >= _duration) {
-        await player.seek(Duration.zero);
-        _position = Duration.zero;
-      }
-      await player.play(
-        media.origin == MediaOrigin.localFile
-            ? DeviceFileSource(media.location)
-            : UrlSource(media.location),
-      );
-    } catch (e, st) {
-      debugPrint('PlaybackFlow: event voice play failed: $e\n$st');
-      _playingEventVoicePath = null;
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Play failed')));
-    }
-  }
-
-  /// Lazily attaches the streams of a freshly created player.
-  void _attachPlayer(AudioPlayer player) {
-    _posSub = player.onPositionChanged.listen((d) {
-      if (!mounted) return;
-      setState(() => _position = d);
-    });
-    _durSub = player.onDurationChanged.listen((d) {
-      if (!mounted) return;
-      setState(() => _duration = d);
-    });
-    _stateSub = player.onPlayerStateChanged.listen((state) {
-      if (!mounted) return;
-      setState(() {
-        final isReportSource = _audioSource == _AudioSource.report;
-        _isPlaying = state == PlayerState.playing && isReportSource && _playingEventVoicePath == null;
-        if (state == PlayerState.completed) {
-          _position = _duration;
-          _playingEventVoicePath = null;
-        }
-      });
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -761,7 +688,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     final voiceMedia = ReportLocalService.resolveMedia(voiceUrl, '');
     final hasPhoto = media.origin != MediaOrigin.none;
     final hasVoice = voiceMedia.origin != MediaOrigin.none;
-    final isEventVoicePlaying = _playingEventVoicePath == voiceUrl && _isPlaying;
     return Align(
       alignment: isSub ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
@@ -819,31 +745,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
             ],
             if (hasVoice) ...[
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton.icon(
-                  onPressed: isEventVoicePlaying
-                      ? () async {
-                          await _player?.pause();
-                          _playingEventVoicePath = null;
-                        }
-                      : () => _playEventVoice(voiceUrl, voiceUrl),
-                  style: FilledButton.styleFrom(
-                    backgroundColor:
-                        isReject ? Colors.red.shade700 : Colors.blue.shade700,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: Icon(
-                    isEventVoicePlaying
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                  ),
-                  label: Text(
-                    isEventVoicePlaying ? 'PAUSE' : 'PLAY VOICE',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
+              TimelineAudioPlayer(
+                voicePath: voiceUrl,
+                voiceUrl: voiceUrl,
               ),
             ],
           ],
@@ -956,6 +860,196 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: Colors.green.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resubmit capture sheet: photo + optional voice note.
+// ---------------------------------------------------------------------------
+class _ResubmitCaptureSheet extends StatefulWidget {
+  const _ResubmitCaptureSheet();
+
+  @override
+  State<_ResubmitCaptureSheet> createState() => _ResubmitCaptureSheetState();
+}
+
+class _ResubmitCaptureSheetState extends State<_ResubmitCaptureSheet> {
+  final ImagePicker _picker = ImagePicker();
+  String? _photoPath;
+  String? _voicePath;
+  bool _saving = false;
+  bool _recording = false;
+  int _recordSeconds = 0;
+  Timer? _ticker;
+  Timer? _autoStop;
+  late final AudioRecorder _recorder;
+
+  @override
+  void initState() {
+    super.initState();
+    _recorder = AudioRecorder();
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _autoStop?.cancel();
+    _recorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePhoto() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo == null) return;
+    final dir = await getApplicationDocumentsDirectory();
+    final reportsDir = await Directory('${dir.path}/reports').create(recursive: true);
+    final savedPath = '${reportsDir.path}/resubmit_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final compressed = await FlutterImageCompress.compressAndGetFile(
+      photo.path,
+      savedPath,
+      minWidth: 640,
+      minHeight: 640,
+      quality: 70,
+      format: CompressFormat.jpeg,
+    );
+    final finalPath = compressed?.path ?? photo.path;
+    setState(() => _photoPath = finalPath);
+  }
+
+  Future<void> _toggleRecord() async {
+    if (_recording) {
+      await _stopRecording();
+      return;
+    }
+    try {
+      if (!await _recorder.hasPermission()) return;
+      final dir = await getApplicationDocumentsDirectory();
+      final reportsDir = await Directory('${dir.path}/reports').create(recursive: true);
+      final path = '${reportsDir.path}/resubmit_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(const RecordConfig(), path: path);
+      setState(() {
+        _recording = true;
+        _recordSeconds = 0;
+      });
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) => setState(() => _recordSeconds++));
+      _autoStop = Timer(const Duration(seconds: 15), _stopRecording);
+    } catch (e) {
+      debugPrint('ResubmitFlow: recording failed: $e');
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _ticker?.cancel();
+    _autoStop?.cancel();
+    if (!_recording) return;
+    setState(() => _recording = false);
+    try {
+      final path = await _recorder.stop();
+      if (path != null && await File(path).exists() && (await File(path).length()) > 0) {
+        setState(() => _voicePath = path);
+      }
+    } catch (e) {
+      debugPrint('ResubmitFlow: stop recording failed: $e');
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_photoPath == null || _photoPath!.isEmpty) return;
+    if (_saving) return;
+    setState(() => _saving = true);
+    await _stopRecording();
+    if (!mounted) return;
+    Navigator.of(context).pop((
+      photoPath: _photoPath!,
+      voicePath: _voicePath ?? '',
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _photoPath == null ? 'Take new photo' : 'Retake photo',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            if (_photoPath != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(_photoPath!),
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: _saving ? null : _takePhoto,
+                icon: Icon(_photoPath == null ? Icons.camera_alt : Icons.refresh),
+                label: Text(_photoPath == null ? 'CAPTURE PHOTO' : 'RETAKE PHOTO'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _voicePath == null ? 'Add voice note (optional)' : 'Voice captured',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _recording ? '$_recordSeconds s' : '$_recordSeconds s',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w300,
+                color: _recording ? Colors.red : Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: _saving ? null : _toggleRecord,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _recording ? Colors.red.shade700 : Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                ),
+                icon: Icon(_recording ? Icons.stop : Icons.mic),
+                label: Text(_recording ? 'STOP RECORDING' : 'RECORD VOICE'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton(
+                onPressed: _saving || _photoPath == null ? null : _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                ),
+                child: _saving
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('SUBMIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ),
           ],

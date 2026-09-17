@@ -242,6 +242,43 @@ class SyncService {
         }
       }
 
+      // 3c) Timeline events: upload any local media paths inside timelineEvents
+      // and rewrite them with their public URLs so the detail UI can stream
+      // them after the local files are reclaimed.
+      if (report.timelineEvents.isNotEmpty) {
+        var timelineChanged = false;
+        final updated = <String>[];
+        for (final raw in report.timelineEvents) {
+          try {
+            final event = Map<String, dynamic>.from(jsonDecode(raw));
+            var photoUrl = (event['photoUrl'] ?? '').toString();
+            var voiceUrl = (event['voiceUrl'] ?? '').toString();
+            if (photoUrl.isNotEmpty &&
+                !photoUrl.startsWith('http') &&
+                await File(photoUrl).exists()) {
+              final url = await _upload('photo', photoUrl, 'image/jpeg');
+              event['photoUrl'] = url;
+              timelineChanged = true;
+            }
+            if (voiceUrl.isNotEmpty &&
+                !voiceUrl.startsWith('http') &&
+                await File(voiceUrl).exists()) {
+              final url = await _upload('voice', voiceUrl, 'audio/mp4');
+              event['voiceUrl'] = url;
+              timelineChanged = true;
+            }
+            updated.add(jsonEncode(event));
+          } catch (e) {
+            debugPrint('SyncFlow: timeline event upload failed: $e');
+            updated.add(raw);
+          }
+        }
+        if (timelineChanged) {
+          report.timelineEvents = updated;
+          await DatabaseService.saveSubStatus(report);
+        }
+      }
+
       // 4) DB row — only when media are in place.
       if (report.isPhotoSynced && report.isVoiceSynced) {
         if (report.dbStatus != 'synced') {
@@ -341,7 +378,8 @@ class SyncService {
     //  * activity_log: the shared audit trail ("Fix & Resubmit" loop).
     final payload = _tlValidationPayload(report, allowClear: true)
       ..['photo_url'] = report.photoUrl
-      ..['activity_log'] = jsonEncode(report.activityLog);
+      ..['activity_log'] = jsonEncode(report.activityLog)
+      ..['timeline_events'] = report.timelineEvents;
     if (payload.isEmpty) return;
     final updated = await Supabase.instance.client
         .from('reports')
