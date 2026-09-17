@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
@@ -16,9 +18,6 @@ import '../services/database_service.dart';
 import '../services/report_local_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/back_button_circle.dart';
-import '../widgets/report_thumbnail.dart';
-import '../widgets/voice_equalizer.dart';
-import '../widgets/voice_play_button.dart';
 
 /// Radius (in metres) within which an on-site Team Leader validation counts as
 /// 'physical' — i.e. the TL really was standing on the report's spot. Beyond it
@@ -27,7 +26,7 @@ const double tlPhysicalRadiusMeters = 50;
 
 /// Which audio source the detail screen's shared player is playing: the
 /// subcontractor's original voice note, or the TL's rejection explanation.
-enum _AudioSource { report, rejection }
+enum _AudioSource { report }
 
 /// Classifies an on-site validation from the measured distance between the
 /// report and the Team Leader.
@@ -95,7 +94,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   /// play/pause; disposed with the screen.
   AudioPlayer? _player;
   bool _isPlaying = false;
-  bool _isRejectionPlaying = false;
 
   /// Which audio source the shared player is (or was) playing.
   _AudioSource _audioSource = _AudioSource.report;
@@ -104,6 +102,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
+
+  /// Tracks the timeline event voice currently being played so the correct
+  /// bubble shows its play/pause state without colliding with the main report
+  /// voice button.
+  String? _playingEventVoicePath;
 
   @override
   void initState() {
@@ -123,7 +126,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     super.dispose();
   }
 
-  @override
+   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Re-fetch the record from Isar when the screen regains focus, so the
     // photo/voice paths shown are always the latest stored values.
@@ -134,19 +137,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     }
   }
 
-  static String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
   /// Opens the report's GPS coordinates in the external maps launcher.
   Future<void> _openInMaps() async {
     final lat = _report.lat;
     final lng = _report.lng;
     if (lat == 0 && lng == 0) return;
     try {
-      // Google Maps query URL, opened in the system browser/maps app.
       await launchUrl(
         Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng'),
         mode: LaunchMode.externalApplication,
@@ -286,6 +282,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         return;
       }
 
+      _report.addTimelineEvent(
+        actor: 'tl',
+        action: 'reject',
+        photoUrl: proofPath,
+        voiceUrl: voicePath,
+      );
       _report.tlValidatorId = _tlValidatorId;
       _report.tlValidationType = 'rejected';
       // A rejection has its own proof media; clear the on-site validation
@@ -498,6 +500,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
         return;
       }
 
+      final oldPhotoPath = _report.photoPath;
+      final oldVoicePath = _report.voicePath;
+      _report.addTimelineEvent(
+        actor: 'sub',
+        action: 'resubmit',
+        photoUrl: oldPhotoPath,
+        voiceUrl: oldVoicePath,
+      );
       _report
         ..photoPath = newPath
         ..photoUrl = '' // force a fresh upload of the new capture
@@ -566,171 +576,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
-  /// The "Dispute Shield" rejection card: the TL's proof photo and spoken
-  /// explanation, framed in red so the dispute is unmissable.
-  Widget _rejectionCard(Report report) {
-    final hasVoice =
-        ReportLocalService.resolveMedia(
-          report.tlRejectionVoicePath,
-          report.tlRejectionVoiceUrl,
-        ).origin !=
-        MediaOrigin.none;
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Colors.red, width: 2),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.gpp_bad, color: Colors.red),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Rejected by Team Leader',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (report.tlValidatedAt != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  DateFormat(
-                    'd MMM, hh:mm a',
-                  ).format(report.tlValidatedAt!.toLocal()),
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-              ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                height: 180,
-                width: double.infinity,
-                child: ReportThumbnail(
-                  report: report,
-                  pathOverride: report.tlRejectionPhotoPath,
-                  urlOverride: report.tlRejectionPhotoUrl,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            if (hasVoice) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
-                  onPressed: _toggleRejectionPlay,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.red.shade700,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: Icon(
-                    _isRejectionPlaying
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                  ),
-                  label: Text(
-                    _isRejectionPlaying
-                        ? 'PAUSE EXPLANATION'
-                        : 'PLAY EXPLANATION',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The report's life story ("Fix & Resubmit" loop): one dot-line per entry.
-  Widget _activityTimeline(Report report) {
-    final entries = report.parseActivityLog();
-    if (entries.isEmpty) return const SizedBox.shrink();
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Activity',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            for (final e in entries)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      e['actor'] == 'tl'
-                          ? Icons.gavel
-                          : e['actor'] == 'owner'
-                              ? Icons.workspace_premium
-                              : Icons.engineering_outlined,
-                      size: 18,
-                      color: e['actor'] == 'tl' ? Colors.red : Colors.blueGrey,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _activityLine(e),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Human-readable line for one activity entry, e.g.
-  /// 'Team Leader rejected the report — 17 Sep, 10:12'.
-  String _activityLine(Map<String, dynamic> e) {
-    final actor = switch (e['actor']) {
-      'tl' => 'Team Leader',
-      'owner' => 'Owner',
-      _ => 'Subcontractor',
-    };
-    final action = switch (e['action']) {
-      'rejected' => 'rejected the report',
-      'resubmitted' => 'fixed & resubmitted',
-      'validated' => 'validated the report',
-      _ => e['action']?.toString() ?? 'updated the report',
-    };
-    final when = DateTime.tryParse(e['time']?.toString() ?? '');
-    final whenLabel = when == null
-        ? ''
-        : ' — ${DateFormat('d MMM, HH:mm').format(when.toLocal())}';
-    return '$actor $action$whenLabel';
-  }
-
   /// Read-only summary of the gate decision, shown once the report has been
   /// validated (so the TL sees how and when it was signed off).
   Widget _tlValidationCard(Report report) {
@@ -776,57 +621,24 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
-  /// Toggle playback. Creates (once) and subscribes to a persistent player so
-  /// the UI can animate while audio is active and reset when it finishes.
-  ///
-  /// "Hybrid Shield": plays the local file while it exists, otherwise streams
-  /// the cloud copy (a reclaimed report keeps only its URL).
-  Future<void> _togglePlay() =>
-      _playVoice(_AudioSource.report, _report.voicePath, _report.voiceUrl);
-
-  /// Plays/pauses the TL's rejection voice note ("Dispute Shield") through the
-  /// same shared player, so the two sources can never talk over each other.
-  Future<void> _toggleRejectionPlay() => _playVoice(
-        _AudioSource.rejection,
-        _report.tlRejectionVoicePath,
-        _report.tlRejectionVoiceUrl,
-      );
-
-  /// Shared playback engine for both voice sources. Pausing is source-aware:
-  /// only a tap on the currently playing source pauses it.
-  Future<void> _playVoice(
-    _AudioSource source,
-    String path,
-    String url,
-  ) async {
-    if (source == _audioSource &&
-        (source == _AudioSource.report ? _isPlaying : _isRejectionPlaying)) {
+  /// Plays a voice note attached to a specific timeline event. Pauses if the
+  /// same event voice is already active; otherwise starts playback and stops
+  /// any other source.
+  Future<void> _playEventVoice(String path, String url) async {
+    if (_playingEventVoicePath == path && _isPlaying) {
       await _player?.pause();
+      _playingEventVoicePath = null;
       return;
     }
     final media = ReportLocalService.resolveMedia(path, url);
-    if (media.origin == MediaOrigin.none) {
-      // Either there is no voice note at all, or its local file is gone and
-      // there is no cloud copy to stream.
-      final missingFile = path.isNotEmpty;
-      debugPrint(
-        'PlaybackFlow: no playable voice source (path="$path", url="$url")',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(missingFile ? 'Voice file missing' : 'No voice note'),
-        ),
-      );
-      return;
-    }
+    if (media.origin == MediaOrigin.none) return;
     try {
       final created = _player == null;
       final player = _player ??= AudioPlayer();
       if (created) _attachPlayer(player);
-      _audioSource = source;
+      _audioSource = _AudioSource.report;
+      _playingEventVoicePath = path;
       await player.setReleaseMode(ReleaseMode.stop);
-      // After a track finished, restart from the beginning.
       if (_duration > Duration.zero && _position >= _duration) {
         await player.seek(Duration.zero);
         _position = Duration.zero;
@@ -837,7 +649,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
             : UrlSource(media.location),
       );
     } catch (e, st) {
-      debugPrint('PlaybackFlow: play failed for "${media.location}": $e\n$st');
+      debugPrint('PlaybackFlow: event voice play failed: $e\n$st');
+      _playingEventVoicePath = null;
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -858,16 +671,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     _stateSub = player.onPlayerStateChanged.listen((state) {
       if (!mounted) return;
       setState(() {
-        // One shared player feeds both the report voice note and the TL's
-        // rejection voice; only the active source drives its flag.
-        _isPlaying =
-            state == PlayerState.playing &&
-            _audioSource == _AudioSource.report;
-        _isRejectionPlaying =
-            state == PlayerState.playing &&
-            _audioSource == _AudioSource.rejection;
+        final isReportSource = _audioSource == _AudioSource.report;
+        _isPlaying = state == PlayerState.playing && isReportSource && _playingEventVoicePath == null;
         if (state == PlayerState.completed) {
-          _position = _duration; // show a full bar while it settles back
+          _position = _duration;
+          _playingEventVoicePath = null;
         }
       });
     });
@@ -916,197 +724,155 @@ class _ReportDetailScreenState extends State<ReportDetailScreen>
     );
   }
 
-  /// The scrollable Execution Timeline: original submission -> TL rejection
-  /// -> resubmission -> gate summary -> location -> activity trail.
+  /// The scrollable Execution Timeline: every event in [timelineEvents] is
+  /// rendered as a chat bubble, oldest first. The current TL validation summary
+  /// (when present) sits above the bubbles.
   Widget _buildTimeline(Report report) {
-    final items = <Widget>[
-      _originalSubmissionCard(report),
-      if (report.tlValidationType == 'rejected') _rejectionCard(report),
-      if (_resubmissionAt(report) != null) _resubmissionCard(report),
-      // "Chef de Chantier Gate" decision summary (only once done, and only
-      // for acceptances â€” a rejection has its own red card above).
-      if (report.tlValidatedAt != null &&
-          report.tlValidationType != 'rejected')
-        _tlValidationCard(report),
-      _locationCard(),
-      _activityTimeline(report),
-    ];
-    // Clean rhythm: 16px between every card, 16px around the whole list.
-    final spaced = <Widget>[];
-    for (final item in items) {
-      spaced
-        ..add(item)
-        ..add(const SizedBox(height: 16));
+    final items = <Widget>[];
+    if (report.tlValidatedAt != null &&
+        report.tlValidationType != 'rejected') {
+      items.add(_tlValidationCard(report));
+      items.add(const SizedBox(height: 16));
     }
-    return ListView(padding: const EdgeInsets.all(16), children: spaced);
-  }
-  /// Item 1 â€” the subcontractor's original submission: full-width photo,
-  /// label, and the original voice player.
-  Widget _originalSubmissionCard(Report report) {
-    final hasVoice =
-        ReportLocalService.resolveMedia(
-          report.voicePath,
-          report.voiceUrl,
-        ).origin !=
-        MediaOrigin.none;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 250,
-            width: double.infinity,
-            child: ReportThumbnail(report: report, fit: BoxFit.cover),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.engineering_outlined, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Submitted by Subcontractor',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat(
-                    'd MMM, hh:mm a',
-                  ).format(report.timestamp.toLocal()),
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-                if (!hasVoice) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'No voice note',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 8),
-                  VoiceEqualizer(playing: _isPlaying),
-                  // Thick progress bar with big time labels: readable outdoors.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        Text(
-                          _fmt(_position),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value: _duration > Duration.zero
-                                ? _position.inMilliseconds /
-                                      _duration.inMilliseconds
-                                : 0.0,
-                            minHeight: 12,
-                            borderRadius: BorderRadius.circular(6),
-                            color: Colors.blue,
-                            backgroundColor: Colors.grey.shade300,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          _fmt(_duration),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  VoicePlayButton(playing: _isPlaying, onTap: _togglePlay),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  /// Item 3 â€” the subcontractor's resubmission: the re-captured photo, shown
-  /// only when the activity log records a resubmission.
-  Widget _resubmissionCard(Report report) {
-    final at = _resubmissionAt(report)!;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 250,
-            width: double.infinity,
-            child: ReportThumbnail(report: report, fit: BoxFit.cover),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.build_circle, size: 20, color: Colors.green),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Resubmitted by Subcontractor',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat('d MMM, hh:mm a').format(at.toLocal()),
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The latest 'resubmitted' entry in the activity log, or null when the
-  /// subcontractor has never answered a rejection. The log is the source of
-  /// truth: a "photoPath changed" heuristic can't survive syncs and cleanups.
-  DateTime? _resubmissionAt(Report report) {
-    DateTime? at;
-    for (final e in report.parseActivityLog()) {
-      if (e['action'] == 'resubmitted') {
-        at = DateTime.tryParse(e['time']?.toString() ?? '') ??
-            at ??
-            DateTime.now();
+    for (final raw in report.timelineEvents) {
+      try {
+        final event = Map<String, dynamic>.from(jsonDecode(raw));
+        items.add(_timelineEventBubble(event));
+        items.add(const SizedBox(height: 16));
+      } catch (e) {
+        debugPrint('TimelineFlow: skipping malformed event: $e');
       }
     }
-    return at;
+    items.add(_locationCard());
+    return ListView(padding: const EdgeInsets.all(16), children: items);
   }
 
-  /// Clean, tappable location row â€” the raw coordinates stay out of sight
-  /// behind the maps launcher.
+  /// One immutable chat bubble for a single timeline event.
+  Widget _timelineEventBubble(Map<String, dynamic> event) {
+    final actor = (event['actor'] ?? '').toString();
+    final action = (event['action'] ?? '').toString();
+    final photoUrl = (event['photoUrl'] ?? '').toString();
+    final voiceUrl = (event['voiceUrl'] ?? '').toString();
+    final timeStr = (event['time'] ?? '').toString();
+    final isSub = actor == 'sub';
+    final isReject = action == 'reject';
+    final when = DateTime.tryParse(timeStr)?.toLocal();
+    final media = ReportLocalService.resolveMedia(photoUrl, '');
+    final voiceMedia = ReportLocalService.resolveMedia(voiceUrl, '');
+    final hasPhoto = media.origin != MediaOrigin.none;
+    final hasVoice = voiceMedia.origin != MediaOrigin.none;
+    final isEventVoicePlaying = _playingEventVoicePath == voiceUrl && _isPlaying;
+    return Align(
+      alignment: isSub ? Alignment.centerLeft : Alignment.centerRight,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        decoration: BoxDecoration(
+          color: isSub
+              ? Colors.blue.shade50
+              : isReject
+                  ? Colors.red.shade50
+                  : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: isReject
+              ? Border.all(color: Colors.red, width: 2)
+              : null,
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isSub ? Icons.engineering_outlined : Icons.gavel,
+                  size: 18,
+                  color: isReject ? Colors.red : Colors.blueGrey,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isSub ? 'Subcontractor' : 'Team Leader',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isReject ? Colors.red : Colors.blueGrey,
+                    ),
+                  ),
+                ),
+                if (when != null)
+                  Text(
+                    DateFormat('d MMM, HH:mm').format(when),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+              ],
+            ),
+            if (hasPhoto) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 180,
+                  width: double.infinity,
+                  child: _buildEventPhoto(media.location, media.origin == MediaOrigin.network),
+                ),
+              ),
+            ],
+            if (hasVoice) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton.icon(
+                  onPressed: isEventVoicePlaying
+                      ? () async {
+                          await _player?.pause();
+                          _playingEventVoicePath = null;
+                        }
+                      : () => _playEventVoice(voiceUrl, voiceUrl),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isReject ? Colors.red.shade700 : Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: Icon(
+                    isEventVoicePlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                  ),
+                  label: Text(
+                    isEventVoicePlaying ? 'PAUSE' : 'PLAY VOICE',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventPhoto(String location, bool isNetwork) {
+    if (isNetwork) {
+      return CachedNetworkImage(
+        imageUrl: location,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        placeholder: (context, url) =>
+            Container(color: Colors.grey.shade200, child: const Icon(Icons.image_not_supported)),
+        errorWidget: (context, url, error) =>
+            Container(color: Colors.grey.shade300, child: const Icon(Icons.broken_image)),
+      );
+    }
+    return Image.file(
+      File(location),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      errorBuilder: (context, error, stackTrace) =>
+          Container(color: Colors.grey.shade300, child: const Icon(Icons.broken_image)),
+    );
+  }
+  /// The report's life story ("Fix & Resubmit" loop): one dot-line per entry.
   Widget _locationCard() {
     return Card(
       clipBehavior: Clip.antiAlias,

@@ -118,6 +118,13 @@ class Report {
   /// `activity_log JSONB` column without extra models.
   List<String> activityLog = [];
 
+  /// Append-only event log for the Detail Screen timeline. Each entry is a
+  /// flat JSON string:
+  /// `{"actor":"sub|tl","action":"submit|resubmit|reject|...","photoUrl":"...",
+  ///   "voiceUrl":"...","time":"ISO-8601"}`. Never overwritten: every new
+  /// action appends, so the full dispute history is preserved.
+  List<String> timelineEvents = [];
+
   /// True when this report still needs a Team Leader gate decision.
   ///
   /// Only 'work' and 'material' reports pass through the gate; 'problem'
@@ -149,6 +156,25 @@ class Report {
       'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
     });
     activityLog = [...activityLog, entry];
+  }
+
+  /// Appends one immutable event to [timelineEvents] with safe defaults so a
+  /// null or missing field never crashes `jsonEncode` or the UI decoder.
+  void addTimelineEvent({
+    required String actor,
+    required String action,
+    String photoUrl = '',
+    String voiceUrl = '',
+    DateTime? time,
+  }) {
+    final entry = jsonEncode({
+      'actor': actor,
+      'action': action,
+      'photoUrl': photoUrl,
+      'voiceUrl': voiceUrl,
+      'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
+    });
+    timelineEvents = [...timelineEvents, entry];
   }
 
   /// Decodes [activityLog] for display. Malformed entries (older builds,

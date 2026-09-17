@@ -96,70 +96,75 @@ const ReportSchema = CollectionSchema(
       name: r'supabaseId',
       type: IsarType.string,
     ),
-    r'timestamp': PropertySchema(
+    r'timelineEvents': PropertySchema(
       id: 19,
+      name: r'timelineEvents',
+      type: IsarType.stringList,
+    ),
+    r'timestamp': PropertySchema(
+      id: 20,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'tlRejectionPhotoPath': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'tlRejectionPhotoPath',
       type: IsarType.string,
     ),
     r'tlRejectionPhotoUrl': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'tlRejectionPhotoUrl',
       type: IsarType.string,
     ),
     r'tlRejectionVoicePath': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'tlRejectionVoicePath',
       type: IsarType.string,
     ),
     r'tlRejectionVoiceUrl': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'tlRejectionVoiceUrl',
       type: IsarType.string,
     ),
     r'tlValidatedAt': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'tlValidatedAt',
       type: IsarType.dateTime,
     ),
     r'tlValidationPhotoPath': PropertySchema(
-      id: 25,
+      id: 26,
       name: r'tlValidationPhotoPath',
       type: IsarType.string,
     ),
     r'tlValidationPhotoUrl': PropertySchema(
-      id: 26,
+      id: 27,
       name: r'tlValidationPhotoUrl',
       type: IsarType.string,
     ),
     r'tlValidationType': PropertySchema(
-      id: 27,
+      id: 28,
       name: r'tlValidationType',
       type: IsarType.string,
     ),
     r'tlValidatorId': PropertySchema(
-      id: 28,
+      id: 29,
       name: r'tlValidatorId',
       type: IsarType.string,
     ),
-    r'type': PropertySchema(id: 29, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 30, name: r'userId', type: IsarType.string),
+    r'type': PropertySchema(id: 30, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 31, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 31,
+      id: 32,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 32,
+      id: 33,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 33,
+      id: 34,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -202,6 +207,13 @@ int _reportEstimateSize(
   bytesCount += 3 + object.problemCategory.length * 3;
   bytesCount += 3 + object.status.length * 3;
   bytesCount += 3 + object.supabaseId.length * 3;
+  bytesCount += 3 + object.timelineEvents.length * 3;
+  {
+    for (var i = 0; i < object.timelineEvents.length; i++) {
+      final value = object.timelineEvents[i];
+      bytesCount += value.length * 3;
+    }
+  }
   bytesCount += 3 + object.tlRejectionPhotoPath.length * 3;
   bytesCount += 3 + object.tlRejectionPhotoUrl.length * 3;
   bytesCount += 3 + object.tlRejectionVoicePath.length * 3;
@@ -243,21 +255,22 @@ void _reportSerialize(
   writer.writeString(offsets[16], object.problemCategory);
   writer.writeString(offsets[17], object.status);
   writer.writeString(offsets[18], object.supabaseId);
-  writer.writeDateTime(offsets[19], object.timestamp);
-  writer.writeString(offsets[20], object.tlRejectionPhotoPath);
-  writer.writeString(offsets[21], object.tlRejectionPhotoUrl);
-  writer.writeString(offsets[22], object.tlRejectionVoicePath);
-  writer.writeString(offsets[23], object.tlRejectionVoiceUrl);
-  writer.writeDateTime(offsets[24], object.tlValidatedAt);
-  writer.writeString(offsets[25], object.tlValidationPhotoPath);
-  writer.writeString(offsets[26], object.tlValidationPhotoUrl);
-  writer.writeString(offsets[27], object.tlValidationType);
-  writer.writeString(offsets[28], object.tlValidatorId);
-  writer.writeString(offsets[29], object.type);
-  writer.writeString(offsets[30], object.userId);
-  writer.writeString(offsets[31], object.voicePath);
-  writer.writeString(offsets[32], object.voiceStatus);
-  writer.writeString(offsets[33], object.voiceUrl);
+  writer.writeStringList(offsets[19], object.timelineEvents);
+  writer.writeDateTime(offsets[20], object.timestamp);
+  writer.writeString(offsets[21], object.tlRejectionPhotoPath);
+  writer.writeString(offsets[22], object.tlRejectionPhotoUrl);
+  writer.writeString(offsets[23], object.tlRejectionVoicePath);
+  writer.writeString(offsets[24], object.tlRejectionVoiceUrl);
+  writer.writeDateTime(offsets[25], object.tlValidatedAt);
+  writer.writeString(offsets[26], object.tlValidationPhotoPath);
+  writer.writeString(offsets[27], object.tlValidationPhotoUrl);
+  writer.writeString(offsets[28], object.tlValidationType);
+  writer.writeString(offsets[29], object.tlValidatorId);
+  writer.writeString(offsets[30], object.type);
+  writer.writeString(offsets[31], object.userId);
+  writer.writeString(offsets[32], object.voicePath);
+  writer.writeString(offsets[33], object.voiceStatus);
+  writer.writeString(offsets[34], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -281,21 +294,22 @@ Report _reportDeserialize(
   object.problemCategory = reader.readString(offsets[16]);
   object.status = reader.readString(offsets[17]);
   object.supabaseId = reader.readString(offsets[18]);
-  object.timestamp = reader.readDateTime(offsets[19]);
-  object.tlRejectionPhotoPath = reader.readString(offsets[20]);
-  object.tlRejectionPhotoUrl = reader.readString(offsets[21]);
-  object.tlRejectionVoicePath = reader.readString(offsets[22]);
-  object.tlRejectionVoiceUrl = reader.readString(offsets[23]);
-  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[24]);
-  object.tlValidationPhotoPath = reader.readString(offsets[25]);
-  object.tlValidationPhotoUrl = reader.readString(offsets[26]);
-  object.tlValidationType = reader.readString(offsets[27]);
-  object.tlValidatorId = reader.readString(offsets[28]);
-  object.type = reader.readString(offsets[29]);
-  object.userId = reader.readString(offsets[30]);
-  object.voicePath = reader.readString(offsets[31]);
-  object.voiceStatus = reader.readString(offsets[32]);
-  object.voiceUrl = reader.readString(offsets[33]);
+  object.timelineEvents = reader.readStringList(offsets[19]) ?? [];
+  object.timestamp = reader.readDateTime(offsets[20]);
+  object.tlRejectionPhotoPath = reader.readString(offsets[21]);
+  object.tlRejectionPhotoUrl = reader.readString(offsets[22]);
+  object.tlRejectionVoicePath = reader.readString(offsets[23]);
+  object.tlRejectionVoiceUrl = reader.readString(offsets[24]);
+  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[25]);
+  object.tlValidationPhotoPath = reader.readString(offsets[26]);
+  object.tlValidationPhotoUrl = reader.readString(offsets[27]);
+  object.tlValidationType = reader.readString(offsets[28]);
+  object.tlValidatorId = reader.readString(offsets[29]);
+  object.type = reader.readString(offsets[30]);
+  object.userId = reader.readString(offsets[31]);
+  object.voicePath = reader.readString(offsets[32]);
+  object.voiceStatus = reader.readString(offsets[33]);
+  object.voiceUrl = reader.readString(offsets[34]);
   return object;
 }
 
@@ -345,9 +359,9 @@ P _reportDeserializeProp<P>(
     case 18:
       return (reader.readString(offset)) as P;
     case 19:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringList(offset) ?? []) as P;
     case 20:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 21:
       return (reader.readString(offset)) as P;
     case 22:
@@ -355,9 +369,9 @@ P _reportDeserializeProp<P>(
     case 23:
       return (reader.readString(offset)) as P;
     case 24:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 25:
       return (reader.readString(offset)) as P;
+    case 25:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 26:
       return (reader.readString(offset)) as P;
     case 27:
@@ -373,6 +387,8 @@ P _reportDeserializeProp<P>(
     case 32:
       return (reader.readString(offset)) as P;
     case 33:
+      return (reader.readString(offset)) as P;
+    case 34:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -2319,6 +2335,199 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'supabaseId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'timelineEvents',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'timelineEvents',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'timelineEvents',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'timelineEvents', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsElementIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'timelineEvents', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsLengthEqualTo(int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'timelineEvents', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> timelineEventsIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'timelineEvents', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'timelineEvents', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsLengthLessThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'timelineEvents', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'timelineEvents', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  timelineEventsLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'timelineEvents',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
       );
     });
   }
@@ -5294,6 +5503,12 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctByTimelineEvents() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'timelineEvents');
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'timestamp');
@@ -5553,6 +5768,13 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, String, QQueryOperations> supabaseIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'supabaseId');
+    });
+  }
+
+  QueryBuilder<Report, List<String>, QQueryOperations>
+  timelineEventsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'timelineEvents');
     });
   }
 

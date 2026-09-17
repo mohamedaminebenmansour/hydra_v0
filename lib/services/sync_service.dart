@@ -306,6 +306,7 @@ class SyncService {
       'user_id': report.userId,
       'mobile_id': report.mobileId,
       'activity_log': jsonEncode(report.activityLog),
+      'timeline_events': report.timelineEvents,
       ..._tlValidationPayload(report),
     };
     final inserted = report.supabaseId.isNotEmpty
@@ -466,6 +467,10 @@ class SyncService {
     final remoteLog = row['activity_log'];
     if (remoteLog is List) {
       report.activityLog = remoteLog.map((e) => jsonEncode(e)).toList();
+    }
+    final remoteTimeline = row['timeline_events'];
+    if (remoteTimeline is List) {
+      report.timelineEvents = remoteTimeline.map((e) => jsonEncode(e)).toList();
     }
     await DatabaseService.saveReport(report);
     debugPrint('PullFlow: stored remote row (supabaseId=${report.supabaseId})');

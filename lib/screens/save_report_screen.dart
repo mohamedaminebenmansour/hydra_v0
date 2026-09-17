@@ -484,7 +484,13 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..photoStatus = 'pending'
         ..voiceStatus = 'pending'
         ..dbStatus = 'pending'
-        ..problemCategory = _problemCategory ?? 'general';
+        ..problemCategory = _problemCategory ?? 'general'
+        ..addTimelineEvent(
+          actor: 'sub',
+          action: 'submit',
+          photoUrl: widget.photoPath,
+          voiceUrl: currentVoicePath ?? '',
+        );
       final savedId = await ReportLocalService.saveReport(report);
       debugPrint('SaveFlow: report persisted with Isar id=$savedId');
       if (!mounted) return;
