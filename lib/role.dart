@@ -5,7 +5,9 @@
 /// without creating an import cycle back through `main.dart`.
 ///
 /// 'subcontractor' gets the capture screen; 'team_leader' gets the Chef de
-/// Chantier dashboard. Anything else falls back to the subcontractor UI.
+/// Chantier dashboard; 'owner' gets the thin-client "Site Command" map (no
+/// local Isar storage, everything read from and written to Supabase). Anything
+/// else falls back to the subcontractor UI.
 const String userRole = String.fromEnvironment(
   'USER_ROLE',
   defaultValue: 'subcontractor',

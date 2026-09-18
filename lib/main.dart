@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'role.dart';
 import 'screens/home_screen.dart';
+import 'screens/owner_home_screen.dart';
 import 'screens/team_leader_home_screen.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
@@ -23,9 +24,14 @@ Future<void> main() async {
     url: 'https://yprnwybpteelfhcorwib.supabase.co',
     publishableKey: 'sb_publishable_zzeNiixC5aau8lhM8GtU6g_6GdDRPex',
   );
-  await DatabaseService.init();
-  await SyncService.init(); // background push on reconnect + initial pull
-  await NotificationService.init(); // daily 07:00 local reminder
+  // The Owner's Command Center is a thin client: it never opens the local Isar
+  // database, never runs the offline sync worker and needs no daily site
+  // reminder, so the whole field-staff startup chain is skipped for that role.
+  if (userRole != 'owner') {
+    await DatabaseService.init();
+    await SyncService.init(); // background push on reconnect + initial pull
+    await NotificationService.init(); // daily 07:00 local reminder
+  }
   runApp(const HydraApp());
 }
 
@@ -39,9 +45,14 @@ class HydraApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: userRole == 'team_leader'
-          ? const TeamLeaderHomeScreen()
-          : const HomeScreen(),
+      home: switch (userRole) {
+        // Owner: the thin-client "Site Command" map + decision sheet.
+        'owner' => const OwnerHomeScreen(),
+        // Team Leader: the Chef de Chantier dashboard.
+        'team_leader' => const TeamLeaderHomeScreen(),
+        // Subcontractor (and anything else): the capture screen.
+        _ => const HomeScreen(),
+      },
     );
   }
 }
