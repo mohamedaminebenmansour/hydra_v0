@@ -4,9 +4,41 @@ import 'package:intl/intl.dart';
 import '../models/report.dart';
 import '../role.dart';
 import '../services/database_service.dart';
-import '../services/sync_service.dart';
 import '../widgets/report_thumbnail.dart';
 import '../widgets/report_sheet_actions.dart';
+
+/// Short, locale-friendly label for an optional timestamp, e.g. '9 Sep, 10:00'.
+/// Returns '' for null so tracker nodes can omit the time column.
+String historyTimeLabel(DateTime? time) {
+  if (time == null) return '';
+  return DateFormat('d MMM, HH:mm').format(time.toLocal());
+}
+
+/// TL gate verdict as a (color, label, timestamp) tuple for the tracker.
+(Color, String, DateTime?) historyTlNode(Report report) {
+  final ts = report.tlValidatedAt;
+  return switch (report.tlValidationType) {
+    'rejected' => (Colors.red, 'TL: Rejected', ts),
+    'physical' || 'remote' => (Colors.green, 'TL: Verified', ts),
+    _ => (Colors.yellow, 'TL: Pending', null),
+  };
+}
+
+/// Whether the TL verdict surfaces a dispute bubble on the tracker node.
+bool historyTlHasDispute(Report report) =>
+    report.tlValidationType == 'rejected';
+
+/// Owner decision as a (color, label, timestamp) tuple for the tracker.
+(Color, String, DateTime?) historyOwnerNode(Report report) {
+  final ts = report.ownerStatusAt;
+  return switch (report.ownerStatus) {
+    'validated' || 'approved' => (Colors.green, 'Validated', ts),
+    'acknowledged' => (Colors.blue, 'Acknowledged', ts),
+    'ordered' => (Colors.orange, 'Ordered', ts),
+    'rejected' => (Colors.red, 'Rejected', ts),
+    _ => (Colors.yellow, 'Waiting', null),
+  };
+}
 
 /// Displays all locally saved Reports in a scrollable list with a colored
 /// status border (Yellow = pending, Green = synced).
@@ -95,110 +127,6 @@ class _HistoryScreenState extends State<HistoryScreen>
     return DateFormat('EEEE, d MMMM').format(local);
   }
 
-  /// A compact sync-status badge shown on each history card.
-  Widget _syncBadge(Report report) {
-    return switch (report.syncState) {
-      SyncState.synced => _badge(
-        Icons.check_circle,
-        Colors.green,
-        'Synced',
-        null,
-      ),
-      SyncState.uploading => _badge(
-        Icons.hourglass_top,
-        Colors.amber.shade700,
-        'Syncing…',
-        const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      SyncState.failed => _badge(
-        Icons.error,
-        Colors.red,
-        'Tap to retry',
-        null,
-        () => _retryReport(report),
-      ),
-      SyncState.local => _badge(
-        Icons.cloud_off,
-        Colors.grey,
-        'Saved on phone',
-        null,
-      ),
-    };
-  }
-
-  Widget _badge(
-    IconData icon,
-    Color color,
-    String label, [
-    Widget? trailing,
-    VoidCallback? onTap,
-  ]) {
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        if (trailing != null) ...[const SizedBox(width: 4), trailing],
-      ],
-    );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
-    );
-  }
-
-  Future<void> _retryReport(Report report) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(const SnackBar(content: Text('Retrying sync…')));
-    await SyncService.retryReport(report.id);
-  }
-
-  /// Status avatar (CircleAvatar + caption) remembered from the owner's
-  /// decision. Dominant icon, serving also as a first-time onboarding cue.
-  Widget _statusAvatar(Report report) => _statusAvatarFor(report.ownerStatus);
-
-  String _statusWord(Report report) => _statusWordFor(report.ownerStatus);
-
-  Widget _statusAvatarFor(String s) {
-    final (bg, fg, icon) = switch (s) {
-      'validated' || 'approved' => (Colors.green, Colors.white, Icons.check),
-      'acknowledged' => (Colors.blue, Colors.white, Icons.visibility),
-      'ordered' => (Colors.orange, Colors.white, Icons.local_shipping),
-      'rejected' => (Colors.red, Colors.white, Icons.close),
-      _ => (Colors.yellow, Colors.black, Icons.hourglass_top),
-    };
-    return CircleAvatar(
-      radius: 22,
-      backgroundColor: bg,
-      child: Icon(icon, size: 24, color: fg),
-    );
-  }
-
-  String _statusWordFor(String s) => switch (s) {
-    'validated' => 'Validated',
-    'approved' => 'Approved',
-    'acknowledged' => 'Acknowledged',
-    'ordered' => 'Ordered',
-    'rejected' => 'Rejected',
-    _ => 'Waiting',
-  };
-
   IconData _typeIcon(Report r) => switch (r.type) {
     'work' => Icons.build,
     'problem' => Icons.warning,
@@ -211,8 +139,8 @@ class _HistoryScreenState extends State<HistoryScreen>
     _ => Colors.amber,
   };
 
-  /// Border color based on ownerStatus: Yellow=pending, Green=validated/acknowledged,
-  /// Orange=ordered, Red=rejected.
+  /// Border color based on ownerStatus: Yellow=pending, Green=validated/
+  /// acknowledged, Orange=ordered, Red=rejected.
   Color _borderColorForStatus(String ownerStatus) => switch (ownerStatus) {
     'validated' || 'acknowledged' => Colors.green,
     'ordered' => Colors.orange,
@@ -220,53 +148,114 @@ class _HistoryScreenState extends State<HistoryScreen>
     _ => Colors.yellow,
   };
 
-  /// The Team Leader gate decision shown as a status chip on the card.
-  /// (color, label): Red = rejected, Green = verified, Yellow = not yet done.
-  (Color, String) _tlStatusChip(Report report) =>
-      switch (report.tlValidationType) {
-        'rejected' => (Colors.red, 'TL: Rejected'),
-        'physical' || 'remote' => (Colors.green, 'TL: Verified'),
-        _ => (Colors.yellow, 'TL: Pending'),
-      };
-
-  /// One small labeled status dot for the card's status row.
-  Widget _statusDot(Color color, String label) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-      const SizedBox(width: 4),
-      Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.black87,
-        ),
-      ),
-    ],
+  /// Tiny colored dot used as the leading icon of the TL/Owner tracker nodes.
+  Widget _dot(Color color) => Container(
+    width: 10,
+    height: 10,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 
-  /// The card's bottom status row, driven by the signed-in role.
-  Widget _statusRow(Report report, Color borderColor) {
-    final tlChip = _tlStatusChip(report);
+  /// One tracker node: a fixed 18x18 leading icon/dot + small label + optional
+  /// timestamp + optional dispute bubble.
+  Widget _timelineNode({
+    required Widget leading,
+    required String label,
+    DateTime? time,
+    bool showDisputeBubble = false,
+  }) {
+    final timeText = historyTimeLabel(time);
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        if (!_isTeamLeader) ...[
-          _statusDot(tlChip.$1, tlChip.$2),
-          const SizedBox(width: 12),
+        SizedBox(width: 18, height: 18, child: Center(child: leading)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (timeText.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  timeText,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (showDisputeBubble) ...[
+          const SizedBox(width: 4),
+          Icon(Icons.chat_bubble_outline, size: 13, color: Colors.red),
         ],
-        _statusDot(borderColor, _statusWord(report)),
       ],
     );
   }
 
+  /// Thin connector between tracker nodes so the 3 steps read as a timeline.
+  Widget _timelineConnector() => Container(
+    width: 2,
+    height: 6,
+    margin: const EdgeInsets.only(left: 8),
+    color: Colors.grey.shade300,
+  );
+
+  /// The vertical Submitted -> TL -> Owner tracker. The TL step is HIDDEN for
+  /// the Team Leader (they are the TL), who only tracks the Owner handoff.
+  Widget _validationTracker(Report report) {
+    final tl = historyTlNode(report);
+    final nodes = <Widget>[
+      _timelineNode(
+        leading: Icon(Icons.check_circle, size: 16, color: Colors.grey),
+        label: 'Submitted',
+        time: report.timestamp,
+      ),
+      // Node 2: Team Leader gate - hidden for the Team Leader.
+      if (!_isTeamLeader)
+        _timelineNode(
+          leading: _dot(tl.$1),
+          label: tl.$2,
+          time: tl.$3,
+          showDisputeBubble: historyTlHasDispute(report),
+        ),
+      // Node 3: Owner decision - visible to all roles.
+      Builder(
+        builder: (_) {
+          final owner = historyOwnerNode(report);
+          return _timelineNode(
+            leading: _dot(owner.$1),
+            label: owner.$2,
+            time: owner.$3,
+          );
+        },
+      ),
+    ];
+    final out = <Widget>[];
+    for (var i = 0; i < nodes.length; i++) {
+      if (i > 0) out.add(_timelineConnector());
+      out.add(nodes[i]);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: out,
+    );
+  }
+
   /// One glanceable, icon-dominant report tile: a 100x100 photo on the left
-  /// with a colored status border, a giant type icon and the
-  /// timestamp on the right, and a clean status row underneath.
+  /// with the ownerStatus border, a giant type icon and timestamp on the right,
+  /// and a 3-node validation tracker (Submitted -> TL -> Owner) underneath.
   Widget _trafficCard(Report report) {
     final borderColor = _borderColorForStatus(report.ownerStatus);
     final thumb = ReportThumbnail(report: report, size: 100);
@@ -278,11 +267,11 @@ class _HistoryScreenState extends State<HistoryScreen>
       child: InkWell(
         onTap: () => _openReport(report),
         child: Padding(
-          padding: const EdgeInsets.all(10.0),
+          padding: const EdgeInsets.all(8.0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 100x100 photo with a colored status border - no overlays.
+              // 100x100 photo with the thick owner-status border - no overlays.
               Container(
                 width: 100,
                 height: 100,
@@ -296,38 +285,18 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
               ),
               const SizedBox(width: 12),
-              // Info section: type icon + date/time on top, status row on bottom.
+              // Right side: dominant type icon + the 3-node validation tracker.
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Top row: giant type icon + full date and time.
-                    Row(
-                      children: [
-                        Icon(
-                          _typeIcon(report),
-                          size: 30,
-                          color: _typeColor(report),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          DateFormat(
-                            'd MMM, HH:mm',
-                          ).format(report.timestamp.toLocal()),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
+                    Icon(
+                      _typeIcon(report),
+                      size: 28,
+                      color: _typeColor(report),
                     ),
-                    const SizedBox(height: 8),
-                    // Role-based status chips: a subcontractor sees both
-                    // gates (their work's TL decision + the owner's workflow);
-                    // a Team Leader only tracks the owner layer.
-                    _statusRow(report, borderColor),
+                    const SizedBox(width: 10),
+                    Expanded(child: _validationTracker(report)),
                   ],
                 ),
               ),
