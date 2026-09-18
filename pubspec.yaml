@@ -39,6 +39,7 @@ dependencies:
   flutter_map: ^8.3.2
   latlong2: ^0.9.0
   flutter_map_cache: ^2.0.0
+  flutter_map_marker_cluster: ^8.2.2
   http_cache_file_store: ^2.0.0
   dio_cache_interceptor: ^4.0.0
   flutter_image_compress: ^2.5.1

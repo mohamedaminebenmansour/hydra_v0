@@ -5,6 +5,7 @@ import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:latlong2/latlong.dart';
@@ -14,10 +15,8 @@ import '../models/report.dart';
 import '../services/database_service.dart';
 import 'report_detail_screen.dart';
 
-/// Full-screen offline-capable site map.
-///
-/// Shows the user's current location, all local reports as colored pins, and
-/// caches base-map tiles on disk so the map still works without a network.
+/// Full-screen offline-capable site map with clustering and TL verification
+/// filter.
 class SiteMapScreen extends StatefulWidget {
   const SiteMapScreen({super.key});
 
@@ -30,6 +29,7 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   StreamSubscription<Position>? _positionSub;
   List<Report> _reports = [];
   CacheStore? _cacheStore;
+  bool showOnlyPending = false;
 
   @override
   void initState() {
@@ -95,6 +95,11 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
     }
   }
 
+  List<Report> get _filteredReports {
+    if (!showOnlyPending) return _reports;
+    return _reports.where((r) => r.needsTlValidation).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
@@ -117,7 +122,7 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
             ),
           ),
         ),
-      for (final report in _reports)
+      for (final report in _filteredReports)
         if (report.lat != 0 || report.lng != 0)
           Marker(
             point: LatLng(report.lat, report.lng),
@@ -138,40 +143,107 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Site Map')),
-      body: FlutterMap(
-        options: MapOptions(
-          initialCenter:
-              _currentPosition ?? const LatLng(36.8, 10.1),
-          initialZoom: 14,
-          interactionOptions: const InteractionOptions(
-            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-          ),
-        ),
+      body: Stack(
         children: [
-          TileLayer(
-            urlTemplate:
-                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-            subdomains: const ['a', 'b', 'c', 'd'],
-            userAgentPackageName: 'com.hydra.app',
-            tileProvider: _cacheStore == null
-                ? NetworkTileProvider()
-                : CachedTileProvider(
-                    store: _cacheStore!,
-                    maxStale: const Duration(days: 30),
-                  ),
+          FlutterMap(
+            options: MapOptions(
+              initialCenter:
+                  _currentPosition ?? const LatLng(36.8, 10.1),
+              initialZoom: 14,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              ),
+            ),
+            children: [
+              TileLayer(
+                urlTemplate:
+                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                subdomains: const ['a', 'b', 'c', 'd'],
+                userAgentPackageName: 'com.hydra.app',
+                tileProvider: _cacheStore == null
+                    ? NetworkTileProvider()
+                    : CachedTileProvider(
+                        store: _cacheStore!,
+                        maxStale: const Duration(days: 30),
+                      ),
+              ),
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 45,
+                  builder: (context, markers) {
+                    return Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          markers.length.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  markers: markers,
+                ),
+              ),
+            ],
           ),
-          MarkerLayer(markers: markers),
+          Positioned(
+            bottom: 20,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ToggleButtons(
+                  borderRadius: BorderRadius.circular(30),
+                  isSelected: [!showOnlyPending, showOnlyPending],
+                  onPressed: (index) {
+                    setState(() {
+                      showOnlyPending = index == 1;
+                    });
+                  },
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text('ALL'),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text('⚠️ TO VERIFY'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildReportPin(Report report) {
-    final color = switch (report.ownerStatus) {
-      'validated' => Colors.green,
-      'rejected' => Colors.red,
-      _ => Colors.amber,
-    };
+    final color = showOnlyPending
+        ? Colors.red
+        : switch (report.ownerStatus) {
+            'validated' => Colors.green,
+            'rejected' => Colors.red,
+            _ => Colors.amber,
+          };
     final icon = switch (report.type) {
       'problem' => Icons.warning_amber_rounded,
       'material' => Icons.inventory_2,
