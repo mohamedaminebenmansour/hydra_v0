@@ -6,7 +6,7 @@ import '../role.dart';
 import '../services/database_service.dart';
 import '../services/sync_service.dart';
 import '../widgets/report_thumbnail.dart';
-import 'report_detail_screen.dart';
+import '../widgets/report_sheet_actions.dart';
 
 /// Displays all locally saved Reports in a scrollable list with a colored
 /// status border (Yellow = pending, Green = synced).
@@ -55,13 +55,10 @@ class _HistoryScreenState extends State<HistoryScreen>
   Future<void> _openReport(Report report) async {
     // No reload needed after pop: the stream re-emits on any Isar change.
     // Opening from the 'TO VERIFY' tab enables the Team Leader gate buttons.
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ReportDetailScreen(
-          report: report,
-          validationMode: _view == 'TO VERIFY',
-        ),
-      ),
+    await showDefaultReportDetailSheet(
+      context,
+      report,
+      validationMode: _view == 'TO VERIFY',
     );
   }
 
@@ -102,34 +99,34 @@ class _HistoryScreenState extends State<HistoryScreen>
   Widget _syncBadge(Report report) {
     return switch (report.syncState) {
       SyncState.synced => _badge(
-          Icons.check_circle,
-          Colors.green,
-          'Synced',
-          null,
-        ),
+        Icons.check_circle,
+        Colors.green,
+        'Synced',
+        null,
+      ),
       SyncState.uploading => _badge(
-          Icons.hourglass_top,
-          Colors.amber.shade700,
-          'Syncing…',
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+        Icons.hourglass_top,
+        Colors.amber.shade700,
+        'Syncing…',
+        const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
+      ),
       SyncState.failed => _badge(
-          Icons.error,
-          Colors.red,
-          'Tap to retry',
-          null,
-          () => _retryReport(report),
-        ),
+        Icons.error,
+        Colors.red,
+        'Tap to retry',
+        null,
+        () => _retryReport(report),
+      ),
       SyncState.local => _badge(
-          Icons.cloud_off,
-          Colors.grey,
-          'Saved on phone',
-          null,
-        ),
+        Icons.cloud_off,
+        Colors.grey,
+        'Saved on phone',
+        null,
+      ),
     };
   }
 
@@ -162,17 +159,13 @@ class _HistoryScreenState extends State<HistoryScreen>
         border: Border.all(color: color.withValues(alpha: 0.5)),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: onTap == null
-          ? content
-          : InkWell(onTap: onTap, child: content),
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
     );
   }
 
   Future<void> _retryReport(Report report) async {
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Retrying sync…')),
-    );
+    messenger.showSnackBar(const SnackBar(content: Text('Retrying sync…')));
     await SyncService.retryReport(report.id);
   }
 
@@ -190,42 +183,47 @@ class _HistoryScreenState extends State<HistoryScreen>
       'rejected' => (Colors.red, Colors.white, Icons.close),
       _ => (Colors.yellow, Colors.black, Icons.hourglass_top),
     };
-    return CircleAvatar(radius: 22, backgroundColor: bg, child: Icon(icon, size: 24, color: fg));
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: bg,
+      child: Icon(icon, size: 24, color: fg),
+    );
   }
 
   String _statusWordFor(String s) => switch (s) {
-        'validated' => 'Validated',
-        'approved' => 'Approved',
-        'acknowledged' => 'Acknowledged',
-        'ordered' => 'Ordered',
-        'rejected' => 'Rejected',
-        _ => 'Waiting',
-      };
+    'validated' => 'Validated',
+    'approved' => 'Approved',
+    'acknowledged' => 'Acknowledged',
+    'ordered' => 'Ordered',
+    'rejected' => 'Rejected',
+    _ => 'Waiting',
+  };
 
   IconData _typeIcon(Report r) => switch (r.type) {
-        'work' => Icons.build,
-        'problem' => Icons.warning,
-        _ => Icons.inventory,
-      };
+    'work' => Icons.build,
+    'problem' => Icons.warning,
+    _ => Icons.inventory,
+  };
 
   Color _typeColor(Report r) => switch (r.type) {
-        'work' => Colors.grey,
-        'problem' => Colors.red,
-        _ => Colors.amber,
-      };
+    'work' => Colors.grey,
+    'problem' => Colors.red,
+    _ => Colors.amber,
+  };
 
   /// Border color based on ownerStatus: Yellow=pending, Green=validated/acknowledged,
   /// Orange=ordered, Red=rejected.
   Color _borderColorForStatus(String ownerStatus) => switch (ownerStatus) {
-        'validated' || 'acknowledged' => Colors.green,
-        'ordered' => Colors.orange,
-        'rejected' => Colors.red,
-        _ => Colors.yellow,
-      };
+    'validated' || 'acknowledged' => Colors.green,
+    'ordered' => Colors.orange,
+    'rejected' => Colors.red,
+    _ => Colors.yellow,
+  };
 
   /// The Team Leader gate decision shown as a status chip on the card.
   /// (color, label): Red = rejected, Green = verified, Yellow = not yet done.
-  (Color, String) _tlStatusChip(Report report) => switch (report.tlValidationType) {
+  (Color, String) _tlStatusChip(Report report) =>
+      switch (report.tlValidationType) {
         'rejected' => (Colors.red, 'TL: Rejected'),
         'physical' || 'remote' => (Colors.green, 'TL: Verified'),
         _ => (Colors.yellow, 'TL: Pending'),
@@ -233,24 +231,24 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   /// One small labeled status dot for the card's status row.
   Widget _statusDot(Color color, String label) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 4),
+      Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.black87,
+        ),
+      ),
+    ],
+  );
 
   /// The card's bottom status row, driven by the signed-in role.
   Widget _statusRow(Report report, Color borderColor) {
@@ -275,9 +273,7 @@ class _HistoryScreenState extends State<HistoryScreen>
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openReport(report),
@@ -309,10 +305,16 @@ class _HistoryScreenState extends State<HistoryScreen>
                     // Top row: giant type icon + full date and time.
                     Row(
                       children: [
-                        Icon(_typeIcon(report), size: 30, color: _typeColor(report)),
+                        Icon(
+                          _typeIcon(report),
+                          size: 30,
+                          color: _typeColor(report),
+                        ),
                         const SizedBox(width: 8),
                         Text(
-                          DateFormat('d MMM, HH:mm').format(report.timestamp.toLocal()),
+                          DateFormat(
+                            'd MMM, HH:mm',
+                          ).format(report.timestamp.toLocal()),
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -410,7 +412,8 @@ class _HistoryScreenState extends State<HistoryScreen>
             // Filtered report list.
             Expanded(
               child: StreamBuilder<List<Report>>(
-                stream: widget.reportsStream ?? DatabaseService.watchAllReports(),
+                stream:
+                    widget.reportsStream ?? DatabaseService.watchAllReports(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -457,8 +460,11 @@ class _HistoryScreenState extends State<HistoryScreen>
                   for (final label in headers) {
                     entries.add(
                       Padding(
-                        padding:
-                            const EdgeInsets.only(top: 12, left: 4, right: 4),
+                        padding: const EdgeInsets.only(
+                          top: 12,
+                          left: 4,
+                          right: 4,
+                        ),
                         child: Text(
                           label.toUpperCase(),
                           style: const TextStyle(

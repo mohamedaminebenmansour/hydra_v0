@@ -7,7 +7,7 @@ import '../services/sync_service.dart';
 import '../widgets/report_thumbnail.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
-import 'report_detail_screen.dart';
+import '../widgets/report_sheet_actions.dart';
 
 /// The Team Leader's "Manager's Inbox" (Chef de Chantier Dashboard).
 ///
@@ -34,37 +34,34 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
   Future<void> _sync() async {
     await SyncService.syncPendingReports();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sync started')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Sync started')));
   }
 
   /// The capture workspace (the subcontractor's home): it hosts the camera
   /// capture flow that feeds [SaveReportScreen], so the TL reuses it wholesale.
   Future<void> _openCapture() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HomeScreen()));
   }
 
   /// Opens the read-only history (all reports, all tabs).
   Future<void> _openHistory() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
   }
 
   /// Opens the report the TL tapped, in validation mode, so the three gate
-  /// buttons are pinned to the bottom of the detail screen.
-  Future<void> _openForValidation(Report report) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ReportDetailScreen(
-          report: report,
-          validationMode: true,
-          userRoleOverride: 'team_leader',
-        ),
-      ),
+  /// buttons are pinned to the bottom of the sheet.
+  Future<void> _openForValidation(Report report) {
+    return showDefaultReportDetailSheet(
+      context,
+      report,
+      validationMode: true,
+      selfActor: 'tl',
     );
   }
 

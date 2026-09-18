@@ -117,7 +117,9 @@ void main() {
       final closed = rejectedReport()..ownerStatus = 'validated';
       await pumpDetail(tester, closed, role: 'subcontractor');
 
-      expect(find.text('Work Validated and Closed'), findsOneWidget);
+      // The sheet's closed-stage banner replaced the legacy
+      // "Work Validated and Closed" strip.
+      expect(find.text('Approved by Owner'), findsOneWidget);
       expect(find.text('FIX & RESUBMIT'), findsNothing);
     });
 
@@ -135,7 +137,9 @@ void main() {
         validationMode: true,
       );
 
-      expect(find.text('Work Validated and Closed'), findsOneWidget);
+      // The sheet's closed-stage banner replaces the legacy wording and
+      // suppresses every action button.
+      expect(find.text('Approved by Owner'), findsOneWidget);
       expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
       expect(find.text('REJECT & REQUEST FIX'), findsNothing);
     });

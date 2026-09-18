@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:isar_community/isar.dart';
@@ -120,9 +120,13 @@ class Report {
 
   /// Append-only event log for the Detail Screen timeline. Each entry is a
   /// flat JSON string:
-  /// `{"actor":"sub|tl","action":"submit|resubmit|reject|...","photoUrl":"...",
+  /// `{"actor":"sub|tl","action":"submit|resubmit|reject|comment|...",
+  ///   "text":"why it was rejected / how it was fixed","photoUrl":"...",
   ///   "voiceUrl":"...","time":"ISO-8601"}`. Never overwritten: every new
-  /// action appends, so the full dispute history is preserved.
+  /// action appends, so the full dispute history — and the Sub/TL chat thread
+  /// built on top of it — is preserved.
+  ///
+  /// [text] is optional and absent on events written by older builds.
   List<String> timelineEvents = [];
 
   /// True when this report still needs a Team Leader gate decision.
@@ -160,9 +164,15 @@ class Report {
 
   /// Appends one immutable event to [timelineEvents] with safe defaults so a
   /// null or missing field never crashes `jsonEncode` or the UI decoder.
+  ///
+  /// [text] is the chat message carried by the event: the Team Leader's reason
+  /// when [action] is 'reject', or the subcontractor's explanation when it is
+  /// 'fix_note'. It is optional so the historical (media-only) call sites keep
+  /// working unchanged.
   void addTimelineEvent({
     required String actor,
     required String action,
+    String text = '',
     String photoUrl = '',
     String voiceUrl = '',
     DateTime? time,
@@ -170,11 +180,41 @@ class Report {
     final entry = jsonEncode({
       'actor': actor,
       'action': action,
+      'text': text,
       'photoUrl': photoUrl,
       'voiceUrl': voiceUrl,
       'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
     });
     timelineEvents = [...timelineEvents, entry];
+  }
+
+  /// Decodes [timelineEvents] for display (the shared Sub/TL chat thread).
+  /// Malformed entries (older builds, hand-edited rows) are dropped instead of
+  /// throwing — a thread must never crash the report sheet.
+  ///
+  /// Every entry is normalised so the UI can read `actor`, `action`, `text`,
+  /// `photoUrl`, `voiceUrl` and `time` without null checks; `text` is `''` for
+  /// events written before the chat existed.
+  List<Map<String, dynamic>> parseTimelineEvents() {
+    final entries = <Map<String, dynamic>>[];
+    for (final raw in timelineEvents) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          entries.add({
+            'actor': (decoded['actor'] ?? '').toString(),
+            'action': (decoded['action'] ?? '').toString(),
+            'text': (decoded['text'] ?? '').toString(),
+            'photoUrl': (decoded['photoUrl'] ?? '').toString(),
+            'voiceUrl': (decoded['voiceUrl'] ?? '').toString(),
+            'time': (decoded['time'] ?? '').toString(),
+          });
+        }
+      } catch (e) {
+        debugPrint('TimelineFlow: skipping malformed event: $e');
+      }
+    }
+    return entries;
   }
 
   /// Decodes [activityLog] for display. Malformed entries (older builds,
@@ -201,13 +241,11 @@ class Report {
 
   /// True when the photo upload has been completed (local file uploaded).
   bool get isPhotoSynced => photoStatus == 'synced';
-  bool get isVoiceSynced =>
-      voicePath.isEmpty || voiceStatus == 'synced';
+  bool get isVoiceSynced => voicePath.isEmpty || voiceStatus == 'synced';
   bool get isDbSynced => dbStatus == 'synced';
 
   /// A report is fully synced only when all three sub-pieces succeeded.
-  bool get isFullySynced =>
-      isPhotoSynced && isVoiceSynced && isDbSynced;
+  bool get isFullySynced => isPhotoSynced && isVoiceSynced && isDbSynced;
 
   /// Retryable if it hasn't fully synced yet (covers local, failed, and
   /// stale-uploading states left behind by a crash).

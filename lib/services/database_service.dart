@@ -42,13 +42,13 @@ class DatabaseService {
   /// Returns the generated Isar id of the saved record.
   static Future<int> saveReport(Report report) async {
     try {
-      final id = await _isar.writeTxn(
-        () => _isar.reports.put(report),
+      final id = await _isar.writeTxn(() => _isar.reports.put(report));
+      debugPrint(
+        'DatabaseFlow: report saved '
+        '(id=$id, photo=${report.photoPath}, voice=${report.voicePath}, '
+        'lat=${report.lat}, lng=${report.lng}, '
+        'userId=${report.userId}, mobileId=${report.mobileId})',
       );
-      debugPrint('DatabaseFlow: report saved '
-          '(id=$id, photo=${report.photoPath}, voice=${report.voicePath}, '
-          'lat=${report.lat}, lng=${report.lng}, '
-          'userId=${report.userId}, mobileId=${report.mobileId})');
       return id;
     } catch (e, st) {
       debugPrint('DatabaseFlow: writeTxn/put failed: $e\n$st');
@@ -61,10 +61,12 @@ class DatabaseService {
   static Future<List<Report>> getRetryableReports() {
     return _isar.reports
         .filter()
-        .anyOf(
-          ['local', 'failed', 'uploading', 'pending'],
-          (q, s) => q.statusEqualTo(s),
-        )
+        .anyOf([
+          'local',
+          'failed',
+          'uploading',
+          'pending',
+        ], (q, s) => q.statusEqualTo(s))
         .sortByTimestamp()
         .findAll();
   }
@@ -134,9 +136,7 @@ class DatabaseService {
   /// Isar filter: we pre-filter on the persisted `status` column — the same
   /// cheap pattern used by [watchPendingCount] — and finish the evaluation in
   /// Dart via [Report.isMediaReclaimable].
-  static Future<List<Report>> getMediaCleanupCandidates(
-    DateTime cutoff,
-  ) async {
+  static Future<List<Report>> getMediaCleanupCandidates(DateTime cutoff) async {
     if (!isInitialized) return const <Report>[];
     final synced = await _isar.reports
         .filter()
@@ -174,6 +174,52 @@ class DatabaseService {
     );
   }
 
+  /// Appends one event to a report's shared thread (the Subcontractor <->
+  /// Team Leader chat) and re-queues the report for the next cloud push, so a
+  /// message typed on this device reaches the other device — the push path
+  /// sends `timeline_events` on both its insert and its update branch.
+  ///
+  /// [Report.status] / [Report.dbStatus] are reset to a pending state exactly
+  /// like [markTlValidated] does, so [SyncService] picks the report up again
+  /// even when it was already fully synced. The media sub-statuses are
+  /// preserved, so an already-uploaded photo is never re-uploaded just because
+  /// a message was added.
+  ///
+  /// No-op (with a log line) when the local database is not open: the Owner's
+  /// thin client has no Isar and must still be able to show the sheet.
+  static Future<void> appendReportEvent(
+    Report report, {
+    required String actor,
+    required String action,
+    String text = '',
+    String photoUrl = '',
+    String voiceUrl = '',
+    DateTime? time,
+  }) async {
+    report.addTimelineEvent(
+      actor: actor,
+      action: action,
+      text: text,
+      photoUrl: photoUrl,
+      voiceUrl: voiceUrl,
+      time: time,
+    );
+    if (!isInitialized) {
+      debugPrint(
+        'DatabaseFlow: report ${report.id} event "$action" kept in memory only '
+        '(no local database)',
+      );
+      return;
+    }
+    report.dbStatus = 'pending';
+    report.status = 'local';
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint(
+      'DatabaseFlow: report ${report.id} event "$action" appended by $actor '
+      '(queued for cloud)',
+    );
+  }
+
   /// Update a report's owner status (pulled from Supabase) and stamp when it
   /// changed, so the home-screen badge can count fresh 24h updates.
   static Future<void> updateOwnerStatus(
@@ -183,9 +229,7 @@ class DatabaseService {
     report.ownerStatus = ownerStatus;
     report.ownerStatusAt = DateTime.now();
     await _isar.writeTxn(() => _isar.reports.put(report));
-    debugPrint(
-      'OwnerFlow: report ${report.id} ownerStatus=$ownerStatus',
-    );
+    debugPrint('OwnerFlow: report ${report.id} ownerStatus=$ownerStatus');
   }
 
   /// Count of reports whose owner status changed after [after] (the
@@ -223,9 +267,18 @@ class DatabaseService {
   /// on every Isar write, so list screens update without manual reloads.
   static Stream<List<Report>> watchAllReports() {
     if (!isInitialized) return const Stream<List<Report>>.empty();
-    return _isar.reports
-        .where()
-        .sortByTimestampDesc()
-        .watch(fireImmediately: true);
+    return _isar.reports.where().sortByTimestampDesc().watch(
+      fireImmediately: true,
+    );
+  }
+
+  /// Live view of a single report: emits immediately and on every write, so an
+  /// open report sheet follows changes made underneath it (a pull bringing the
+  /// Team Leader's answer in, a background edit). Emits a single null when the
+  /// local database is not open — the Owner's thin client has no Isar and keeps
+  /// its in-memory snapshot instead.
+  static Stream<Report?> watchReport(int id) {
+    if (!isInitialized) return Stream<Report?>.value(null);
+    return _isar.reports.watchObject(id, fireImmediately: true);
   }
 }

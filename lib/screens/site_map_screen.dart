@@ -13,20 +13,104 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/report.dart';
 import '../services/database_service.dart';
-import 'report_detail_screen.dart';
+import '../widgets/report_detail_bottom_sheet.dart';
 
 /// Full-screen offline-capable site map with clustering and TL verification
 /// filter.
+///
+/// The report stream and the tile provider can be injected (tests hand in a
+/// canned stream and a blank-pixel tile provider); everything defaults to the
+/// real Isar stream and the cached network tiles.
+typedef SiteReportsStream = Stream<List<Report>> Function();
+
 class SiteMapScreen extends StatefulWidget {
-  const SiteMapScreen({super.key});
+  const SiteMapScreen({super.key, this.reportsStream, this.tileProvider});
+
+  /// Live Isar view of every report. Injectable for tests.
+  final SiteReportsStream? reportsStream;
+
+  /// Tile provider override (tests use a blank-pixel provider).
+  final TileProvider? tileProvider;
 
   @override
   State<SiteMapScreen> createState() => _SiteMapScreenState();
 }
 
+// ---------------------------------------------------------------------------
+// Pure helpers: the color/cluster logic lives here so it can be unit-tested
+// without pumping a map, and so the Owner's map (Step 4) can reuse the rules.
+// ---------------------------------------------------------------------------
+
+/// The report's coordinates, or null when they were never captured (0,0).
+LatLng? siteMapPointOf(Report report) {
+  if (report.lat == 0 && report.lng == 0) return null;
+  return LatLng(report.lat, report.lng);
+}
+
+/// The pin color of a report: the stage color everyone already knows from the
+/// report sheet (amber = pending TL, red = rejected, green = validated, blue =
+/// closed by the owner). One source of truth — the map can never disagree with
+/// the sheet.
+Color siteMapPinColor(Report report) => reportStageStyle(
+  reportStageOf(report),
+  ownerStatus: report.ownerStatus,
+).$2;
+
+/// The type icon shown inside a pin.
+IconData siteMapPinIcon(Report report) => switch (report.type) {
+  'problem' => Icons.warning_amber_rounded,
+  'material' => Icons.inventory_2,
+  _ => Icons.handyman,
+};
+
+/// Stable key for a point, used to look a tapped [Marker] back up in the index
+/// and to group reports that share the exact same coordinates.
+String siteMapPointKey(LatLng point) => '${point.latitude},${point.longitude}';
+
+/// Indexes reports by coordinate, so the cluster builder (color) and the
+/// marker tap handler (which report was pressed) can both resolve a point.
+Map<String, List<Report>> indexReportsByPoint(List<Report> reports) {
+  final index = <String, List<Report>>{};
+  for (final report in reports) {
+    final point = siteMapPointOf(report);
+    if (point == null) continue;
+    index
+        .putIfAbsent(siteMapPointKey(point), () => <Report>[])
+        .add(report);
+  }
+  return index;
+}
+
+/// True when any report behind these markers still waits for the Team Leader,
+/// i.e. when the cluster must be drawn RED instead of GREEN.
+bool siteMapClusterNeedsAttention(
+  List<Marker> markers,
+  Map<String, List<Report>> byPoint,
+) {
+  for (final marker in markers) {
+    final reports = byPoint[siteMapPointKey(marker.point)];
+    if (reports != null && reports.any((r) => r.needsTlValidation)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The build key of a report pin (tests and the sheet both address pins by it).
+Key siteMapPinKey(Report report) => ValueKey<String>('site_pin_${report.id}');
+
 class _SiteMapScreenState extends State<SiteMapScreen> {
+  static const double _pinSize = 40;
+
+  final MapController _mapController = MapController();
+
+  /// Set on the first map-ready frame so the camera frames every pin exactly
+  /// once instead of fighting the user's later gestures.
+  bool _framedOnce = false;
+
   LatLng? _currentPosition;
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<List<Report>>? _reportsSub;
   List<Report> _reports = [];
   CacheStore? _cacheStore;
   bool showOnlyPending = false;
@@ -35,31 +119,39 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   void initState() {
     super.initState();
     _prepareCacheStore();
-    _loadReports();
+    _watchReports();
     _startLocationUpdates();
   }
 
   @override
   void dispose() {
     _positionSub?.cancel();
+    _reportsSub?.cancel();
     super.dispose();
+  }
+
+  /// Live view: a report validated on another device re-colors its pin the
+  /// moment the merge lands, without any manual refresh.
+  void _watchReports() {
+    final stream = widget.reportsStream;
+    _reportsSub = (stream != null ? stream() : DatabaseService.watchAllReports())
+        .listen((reports) {
+          if (!mounted) return;
+          setState(() => _reports = reports);
+        });
   }
 
   Future<void> _prepareCacheStore() async {
     try {
       final dir = await getTemporaryDirectory();
-      final store = FileCacheStore('${dir.path}${Platform.pathSeparator}MapTiles');
+      final store = FileCacheStore(
+        '${dir.path}${Platform.pathSeparator}MapTiles',
+      );
       if (!mounted) return;
       setState(() => _cacheStore = store);
     } catch (e) {
       debugPrint('MapFlow: cache store failed: $e');
     }
-  }
-
-  Future<void> _loadReports() async {
-    final reports = await DatabaseService.getAllReports();
-    if (!mounted) return;
-    setState(() => _reports = reports);
   }
 
   Future<void> _startLocationUpdates() async {
@@ -81,15 +173,18 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
       );
       if (!mounted) return;
       setState(() => _currentPosition = LatLng(pos.latitude, pos.longitude));
-      _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10,
-        ),
-      ).listen((pos) {
-        if (!mounted) return;
-        setState(() => _currentPosition = LatLng(pos.latitude, pos.longitude));
-      });
+      _positionSub =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+            ),
+          ).listen((pos) {
+            if (!mounted) return;
+            setState(
+              () => _currentPosition = LatLng(pos.latitude, pos.longitude),
+            );
+          });
     } catch (e) {
       debugPrint('MapFlow: location failed: $e');
     }
@@ -102,43 +197,23 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final markers = <Marker>[
-      if (_currentPosition != null)
+    final visibleReports = _filteredReports;
+    final byPoint = indexReportsByPoint(visibleReports);
+    final clusteredReports = visibleReports
+        .where((r) => siteMapPointOf(r) != null)
+        .toList();
+    final reportByKey = {
+      for (final report in clusteredReports) siteMapPinKey(report): report,
+    };
+    final reportMarkers = <Marker>[
+      for (final report in clusteredReports)
         Marker(
-          point: _currentPosition!,
-          width: 20,
-          height: 20,
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-          ),
+          key: siteMapPinKey(report),
+          point: siteMapPointOf(report)!,
+          width: _pinSize,
+          height: _pinSize,
+          child: _buildReportPin(report),
         ),
-      for (final report in _filteredReports)
-        if (report.lat != 0 || report.lng != 0)
-          Marker(
-            point: LatLng(report.lat, report.lng),
-            width: 36,
-            height: 36,
-            child: GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => ReportDetailScreen(report: report),
-                  ),
-                );
-              },
-              child: _buildReportPin(report),
-            ),
-          ),
     ];
 
     return Scaffold(
@@ -146,10 +221,11 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
       body: Stack(
         children: [
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
-              initialCenter:
-                  _currentPosition ?? const LatLng(36.8, 10.1),
+              initialCenter: _currentPosition ?? const LatLng(36.8, 10.1),
               initialZoom: 14,
+              onMapReady: _frameAllPinsOnce,
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
@@ -160,21 +236,46 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.hydra.app',
-                tileProvider: _cacheStore == null
-                    ? NetworkTileProvider()
-                    : CachedTileProvider(
-                        store: _cacheStore!,
-                        maxStale: const Duration(days: 30),
-                      ),
+                tileProvider:
+                    widget.tileProvider ??
+                    (_cacheStore == null
+                        ? NetworkTileProvider()
+                        : CachedTileProvider(
+                            store: _cacheStore!,
+                            maxStale: const Duration(days: 30),
+                          )),
               ),
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
-                  maxClusterRadius: 45,
+                  maxClusterRadius: 50,
+                  size: const Size(46, 46),
+                  // A cluster tap zooms to its bounds (the plugin's own
+                  // animation) — that is the whole point of clustering.
+                  zoomToBoundsOnClick: true,
+                  spiderfyCluster: false,
+                  // Taps are handled by the cluster layer itself: a child
+                  // GestureDetector never fires when the marker is drawn
+                  // inside a cluster, so this is the only reliable hook.
+                  // The tapped Marker is identified by its build key.
+                  onMarkerTap: (marker) {
+                    final report = reportByKey[marker.key];
+                    if (report == null) return;
+                    showReportDetailSheet(context, report: report);
+                  },
                   builder: (context, markers) {
+                    final urgent = siteMapClusterNeedsAttention(markers, byPoint);
                     return Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
+                      decoration: BoxDecoration(
+                        color: urgent ? Colors.red : Colors.green,
                         shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Center(
                         child: Text(
@@ -182,13 +283,40 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
+                            fontSize: 15,
                           ),
                         ),
                       ),
                     );
                   },
-                  markers: markers,
+                  markers: reportMarkers,
                 ),
+              ),
+              // The GPS dot lives OUTSIDE the cluster layer: the user's own
+              // position must never be counted or zoomed-to as a report.
+              MarkerLayer(
+                markers: [
+                  if (_currentPosition != null)
+                    Marker(
+                      point: _currentPosition!,
+                      width: 20,
+                      height: 20,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -219,11 +347,17 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                   },
                   children: const [
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: Text('ALL'),
                     ),
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: Text('⚠️ TO VERIFY'),
                     ),
                   ],
@@ -236,32 +370,36 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
     );
   }
 
+  /// Frames every pin once on the first map-ready frame, so the user always
+  /// starts looking at their reports instead of a zoomed-in street.
+  void _frameAllPinsOnce() {
+    if (_framedOnce) return;
+    _framedOnce = true;
+    final points = [
+      for (final report in _filteredReports) ?siteMapPointOf(report),
+    ];
+    if (points.isEmpty) return;
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(points),
+        padding: const EdgeInsets.all(60),
+      ),
+    );
+  }
+
   Widget _buildReportPin(Report report) {
-    final color = showOnlyPending
-        ? Colors.red
-        : switch (report.ownerStatus) {
-            'validated' => Colors.green,
-            'rejected' => Colors.red,
-            _ => Colors.amber,
-          };
-    final icon = switch (report.type) {
-      'problem' => Icons.warning_amber_rounded,
-      'material' => Icons.inventory_2,
-      _ => Icons.handyman,
-    };
+    final color = siteMapPinColor(report);
+    final icon = siteMapPinIcon(report);
     return Container(
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
+          BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 1)),
         ],
       ),
-      child: Icon(icon, color: Colors.white, size: 20),
+      child: Icon(icon, color: Colors.white, size: 22),
     );
   }
 }

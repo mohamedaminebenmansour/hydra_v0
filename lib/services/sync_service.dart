@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/report.dart';
 import 'database_service.dart';
+import 'report_merge.dart';
 
 /// Uploads locally pending reports (photos, voice notes) to Supabase and
 /// inserts a row into the `reports` table, marking each one `synced` in Isar.
@@ -112,9 +113,7 @@ class SyncService {
       int changed = 0;
       for (final row in rows) {
         final remote = Map<String, dynamic>.from(row);
-        final localId = int.tryParse(
-          remote['local_id']?.toString() ?? '',
-        );
+        final localId = int.tryParse(remote['local_id']?.toString() ?? '');
         if (localId == null) continue;
         final remoteStatus = (remote['owner_status'] ?? 'pending').toString();
         final local = await DatabaseService.getReportById(localId);
@@ -224,9 +223,7 @@ class SyncService {
             'image/jpeg',
           );
           await DatabaseService.saveSubStatus(report);
-          debugPrint(
-            'SyncFlow: report ${report.id} TL rejection photo synced',
-          );
+          debugPrint('SyncFlow: report ${report.id} TL rejection photo synced');
         }
         if (report.tlRejectionVoicePath.isNotEmpty &&
             report.tlRejectionVoiceUrl.isEmpty) {
@@ -236,9 +233,7 @@ class SyncService {
             'audio/mp4',
           );
           await DatabaseService.saveSubStatus(report);
-          debugPrint(
-            'SyncFlow: report ${report.id} TL rejection voice synced',
-          );
+          debugPrint('SyncFlow: report ${report.id} TL rejection voice synced');
         }
       }
 
@@ -305,7 +300,7 @@ class SyncService {
     }
   }
 
-    /// The Team Leader gate columns ("Chef de Chantier Gate"). [allowClear]
+  /// The Team Leader gate columns ("Chef de Chantier Gate"). [allowClear]
   /// marks a push that legitimately clears the gate (the subcontractor's
   /// "Fix & Resubmit" resets the decision so the report returns to the TL's
   /// inbox): the type is then sent as an empty string instead of being skipped.
@@ -348,15 +343,15 @@ class SyncService {
     };
     final inserted = report.supabaseId.isNotEmpty
         ? await Supabase.instance.client
-            .from('reports')
-            .upsert(payload)
-            .select('id')
-            .single()
+              .from('reports')
+              .upsert(payload)
+              .select('id')
+              .single()
         : await Supabase.instance.client
-            .from('reports')
-            .insert(payload)
-            .select('id')
-            .single();
+              .from('reports')
+              .insert(payload)
+              .select('id')
+              .single();
     report.supabaseId = (inserted['id'] ?? '').toString();
     debugPrint(
       'SyncFlow: report ${report.id} row upserted (remote id=${report.supabaseId})',
@@ -428,21 +423,37 @@ class SyncService {
                 .gt('updated_at', lastPulledAt)
                 .order('id', ascending: true);
       debugPrint('PullFlow: ${rows.length} remote row(s) received');
+      var mergedCount = 0;
       for (final row in rows) {
         try {
           final remote = Map<String, dynamic>.from(row);
           final localId = remote['local_id']?.toString() ?? '';
-          if (localId.isNotEmpty) {
-            final localIdNum = int.tryParse(localId);
-            if (localIdNum != null &&
-                await DatabaseService.getReportById(localIdNum) != null) {
-              continue; // local wins: we already have this record
+          final localIdNum = localId.isEmpty ? null : int.tryParse(localId);
+          final existing = localIdNum == null
+              ? null
+              : await DatabaseService.getReportById(localIdNum);
+          if (existing != null) {
+            // The device already owns this report, so the remote row is merged
+            // into it instead of being skipped: that is what carries the shared
+            // chat thread and the Team Leader's rejection reason across
+            // devices. Local working state (media files, sync statuses) is
+            // never overwritten — see [mergeRemoteReport].
+            if (mergeRemoteReport(existing, remote)) {
+              await DatabaseService.saveSubStatus(existing);
+              mergedCount++;
+              debugPrint(
+                'PullFlow: merged remote changes into report ${existing.id}',
+              );
             }
+            continue;
           }
           await _upsertRemote(remote);
         } catch (e, st) {
           debugPrint('PullFlow: row upsert failed: $e\n$st');
         }
+      }
+      if (mergedCount > 0) {
+        debugPrint('PullFlow: $mergedCount local report(s) updated from cloud');
       }
       // Record the watermark only after a clean pull.
       await prefs.setString(
@@ -483,12 +494,16 @@ class SyncService {
     // "Chef de Chantier Gate": mirror the TL validation decision. The remote
     // photo URL is stored in the path field too (same overload used for
     // photo_url), so [ReportLocalService.resolveMedia] can display it.
-    if (row['tl_validated_at'] != null) {
+    report.tlValidationType = (row['tl_validation_type'] ?? '').toString();
+    // Only mirror the timestamp when a decision actually exists: a resubmitted
+    // report clears `tl_validation_type` while the remote row keeps the old
+    // timestamp, and adopting it would make a fresh device show a validated
+    // report that has really gone back to the Team Leader's queue.
+    if (report.tlValidationType.isNotEmpty && row['tl_validated_at'] != null) {
       report.tlValidatedAt = DateTime.parse(
         row['tl_validated_at'].toString(),
       ).toLocal();
     }
-    report.tlValidationType = (row['tl_validation_type'] ?? '').toString();
     final tlPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString();
     report.tlValidationPhotoUrl = tlPhotoUrl;
     report.tlValidationPhotoPath = tlPhotoUrl;
@@ -498,20 +513,56 @@ class SyncService {
     if (tlRejPhotoUrl.isNotEmpty) {
       report.tlRejectionPhotoPath = tlRejPhotoUrl;
     }
-    report.tlRejectionVoiceUrl =
-        (row['tl_rejection_voice_url'] ?? '').toString();
-    // "Fix & Resubmit" audit trail: remote JSONB array of entry objects ->
-    // local list of raw JSON strings (the Isar representation).
-    final remoteLog = row['activity_log'];
-    if (remoteLog is List) {
-      report.activityLog = remoteLog.map((e) => jsonEncode(e)).toList();
-    }
-    final remoteTimeline = row['timeline_events'];
-    if (remoteTimeline is List) {
-      report.timelineEvents = remoteTimeline.map((e) => jsonEncode(e)).toList();
-    }
+    report.tlRejectionVoiceUrl = (row['tl_rejection_voice_url'] ?? '')
+        .toString();
+    // Shared threads ("Fix & Resubmit" audit trail + the Sub/TL chat): the
+    // remote JSONB column becomes the local list of raw JSON strings that Isar
+    // stores. A missing or unusable column leaves the local events untouched.
+    report.activityLog = _encodeRemoteEvents(
+      row['activity_log'],
+      report.activityLog,
+    );
+    report.timelineEvents = _encodeRemoteEvents(
+      row['timeline_events'],
+      report.timelineEvents,
+    );
     await DatabaseService.saveReport(report);
     debugPrint('PullFlow: stored remote row (supabaseId=${report.supabaseId})');
+  }
+
+  /// Converts a remote thread column into the raw-JSON strings Isar stores.
+  ///
+  /// `timeline_events` arrives as a decoded list of objects while
+  /// `activity_log` is pushed with `jsonEncode` (a JSON string holding that
+  /// list), so both shapes are accepted. [fallback] is returned whenever the
+  /// column is absent, empty or unusable, so a pull can never wipe events that
+  /// were recorded locally.
+  static List<String> _encodeRemoteEvents(dynamic raw, List<String> fallback) {
+    dynamic value = raw;
+    if (value is String) {
+      if (value.isEmpty) return fallback;
+      try {
+        value = jsonDecode(value);
+      } catch (e) {
+        debugPrint('PullFlow: remote event list is not valid JSON: $e');
+        return fallback;
+      }
+    }
+    if (value is! List) return fallback;
+    final entries = <String>[];
+    for (final item in value) {
+      if (item is Map) {
+        entries.add(jsonEncode(item));
+      } else if (item is String) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map) entries.add(jsonEncode(decoded));
+        } catch (e) {
+          debugPrint('PullFlow: skipping malformed remote event: $e');
+        }
+      }
+    }
+    return entries.isEmpty ? fallback : entries;
   }
 
   /// Uploads a file to a public Supabase storage bucket and returns its
