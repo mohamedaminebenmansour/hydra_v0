@@ -129,6 +129,12 @@ class Report {
   /// [text] is optional and absent on events written by older builds.
   List<String> timelineEvents = [];
 
+  /// Read receipt for the History card's unread indicator (WhatsApp-style
+  /// blue dot). A **per-device** flag: the sheet that shows the thread marks
+  /// the report read, and every newly appended [timelineEvents] entry marks
+  /// it unread again. Never synced — each device tracks its own reading.
+  bool isReadByUser = false;
+
   /// True when this report still needs a Team Leader gate decision.
   ///
   /// Only 'work' and 'material' reports pass through the gate; 'problem'
@@ -186,6 +192,11 @@ class Report {
       'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
     });
     timelineEvents = [...timelineEvents, entry];
+    // A fresh thread event means there is news on this report: the History
+    // card flips to its unread state until the user opens the sheet again.
+    // (The acting device re-marks it read in the same session — see the
+    // report sheet — so a user never flags their own action as unread.)
+    isReadByUser = false;
   }
 
   /// Decodes [timelineEvents] for display (the shared Sub/TL chat thread).

@@ -8,6 +8,8 @@ import 'package:latlong2/latlong.dart';
 
 import 'package:hydra_v0/screens/owner_action_sheet.dart';
 import 'package:hydra_v0/screens/owner_home_screen.dart';
+import 'package:hydra_v0/screens/owner_map_screen.dart';
+import 'package:hydra_v0/screens/owner_reports_list_screen.dart';
 
 /// A 1x1 transparent PNG, so the tile layer never touches the network here.
 final Uint8List _transparentPixel = base64Decode(
@@ -162,7 +164,7 @@ void main() {
     });
   });
 
-  group('OwnerHomeScreen', () {
+  group('OwnerMapScreen', () {
     /// Pumps the screen with an injected loader and a blank tile provider, then
     /// drains the plugin/database errors the test VM has no answer for.
     Future<void> pumpScreen(
@@ -172,7 +174,7 @@ void main() {
     }) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: OwnerHomeScreen(
+          home: OwnerMapScreen(
             reportsLoader: loader,
             decisionWriter: writer,
             tileProvider: _BlankTileProvider(),
@@ -293,6 +295,44 @@ void main() {
         find.text('No reports yet.\nTap the big refresh button.'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('OwnerHomeScreen (the landing dashboard)', () {
+    testWidgets('shows Site Command with the two giant doors', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: OwnerHomeScreen()),
+      );
+
+      expect(find.text('Site Command'), findsOneWidget);
+      expect(find.text('VIEW SITE MAP'), findsOneWidget);
+      expect(find.text('VIEW REPORTS LIST'), findsOneWidget);
+      expect(find.byIcon(Icons.map_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.list_alt), findsOneWidget);
+    });
+
+    testWidgets('VIEW SITE MAP opens the map', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(
+        MaterialApp(home: OwnerHomeScreen(onOpenMap: () => opened = true)),
+      );
+
+      await tester.tap(find.text('VIEW SITE MAP'));
+      await tester.pump();
+
+      expect(opened, isTrue);
+    });
+
+    testWidgets('VIEW REPORTS LIST opens the list', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(
+        MaterialApp(home: OwnerHomeScreen(onOpenList: () => opened = true)),
+      );
+
+      await tester.tap(find.text('VIEW REPORTS LIST'));
+      await tester.pump();
+
+      expect(opened, isTrue);
     });
   });
 }

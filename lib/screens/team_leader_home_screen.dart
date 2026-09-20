@@ -54,13 +54,13 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
     ).push(MaterialPageRoute<void>(builder: (_) => const HistoryScreen()));
   }
 
-  /// Opens the report the TL tapped, in validation mode, so the three gate
-  /// buttons are pinned to the bottom of the sheet.
+  /// Opens the report the TL tapped. The sheet resolves its role-based bar, so
+  /// every report still awaiting the gate shows the giant APPROVE / REJECT.
   Future<void> _openForValidation(Report report) {
     return showDefaultReportDetailSheet(
       context,
       report,
-      validationMode: true,
+      role: 'team_leader',
       selfActor: 'tl',
     );
   }

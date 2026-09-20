@@ -69,6 +69,33 @@ class _HistoryScreenState extends State<HistoryScreen>
   bool get _isTeamLeader =>
       (widget.userRoleOverride ?? userRole) == 'team_leader';
 
+  /// The segments of the view selector. A subcontractor gets REWORK — the
+  /// rejected reports he owes a fix on — instead of the Team Leader's
+  /// TO VERIFY gate queue.
+  List<ButtonSegment<String>> get _viewSegments => [
+    const ButtonSegment(
+      value: 'ACTIVE',
+      label: Text('ACTIVE'),
+      icon: Icon(Icons.fiber_new),
+    ),
+    const ButtonSegment(
+      value: 'HISTORY',
+      label: Text('HISTORY'),
+      icon: Icon(Icons.history),
+    ),
+    if (_isTeamLeader)
+      const ButtonSegment(
+        value: 'TO VERIFY',
+        label: Text('TO VERIFY'),
+        icon: Icon(Icons.fact_check),
+      )
+    else
+      const ButtonSegment(
+        value: 'REWORK',
+        label: Text('🔧 REWORK'),
+        icon: Icon(Icons.build_circle),
+      ),
+  ];
   @override
   void initState() {
     super.initState();
@@ -86,18 +113,19 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   Future<void> _openReport(Report report) async {
     // No reload needed after pop: the stream re-emits on any Isar change.
-    // Opening from the 'TO VERIFY' tab enables the Team Leader gate buttons.
-    await showDefaultReportDetailSheet(
-      context,
-      report,
-      validationMode: _view == 'TO VERIFY',
-    );
+    // The sheet resolves its role-based bar (APPROVE / REJECT for a Team Leader,
+    // FIX & RESUBMIT for a subcontractor) from the report and the signed-in role.
+    await showDefaultReportDetailSheet(context, report);
   }
 
   /// True when [report] belongs to the currently selected view.
   bool _matchesView(Report report) {
     if (_view == 'TO VERIFY') {
       return report.needsTlValidation;
+    }
+    if (_view == 'REWORK') {
+      // The subcontractor's to-do list: everything the TL rejected.
+      return report.tlValidationType == 'rejected';
     }
     if (_view == 'HISTORY') {
       return report.ownerStatus == 'validated' ||
@@ -266,42 +294,71 @@ class _HistoryScreenState extends State<HistoryScreen>
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openReport(report),
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 100x100 photo with the thick owner-status border - no overlays.
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  border: Border.all(color: borderColor, width: 3.0),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: thumb,
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Right side: dominant type icon + the 3-node validation tracker.
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _typeIcon(report),
-                      size: 28,
-                      color: _typeColor(report),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 100x100 photo with the thick owner-status border - no overlays.
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: borderColor, width: 3.0),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(child: _validationTracker(report)),
-                  ],
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: thumb,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Right side: dominant type icon + the 3-node validation tracker.
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _typeIcon(report),
+                          size: 28,
+                          color: _typeColor(report),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: _validationTracker(report)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // The unread dot (WhatsApp-style): something new happened on the
+            // thread — a TL rejection, a resubmission, an owner decision —
+            // and the user has not opened the sheet since.
+            if (!report.isReadByUser)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  key: const Key('history_unread_dot'),
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -323,31 +380,18 @@ class _HistoryScreenState extends State<HistoryScreen>
                 scrollDirection: Axis.horizontal,
                 child: Center(
                   child: SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'ACTIVE',
-                        label: Text('ACTIVE'),
-                        icon: Icon(Icons.fiber_new),
-                      ),
-                      ButtonSegment(
-                        value: 'HISTORY',
-                        label: Text('HISTORY'),
-                        icon: Icon(Icons.history),
-                      ),
-                      ButtonSegment(
-                        value: 'TO VERIFY',
-                        label: Text('TO VERIFY'),
-                        icon: Icon(Icons.fact_check),
-                      ),
-                    ],
+                    segments: _viewSegments,
                     selected: {_view},
                     onSelectionChanged: (selection) {
                       setState(() {
                         _view = selection.first;
                         // Problem reports never pass through the gate, so a
                         // leftover 'Problem' type filter would always leave the
-                        // TO VERIFY list empty. Reset it on entry.
-                        if (_view == 'TO VERIFY') _filter = 'All';
+                        // TO VERIFY list empty. Reset it on entry (same for
+                        // REWORK, which lists every type).
+                        if (_view == 'TO VERIFY' || _view == 'REWORK') {
+                          _filter = 'All';
+                        }
                       });
                     },
                   ),
@@ -400,6 +444,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                           switch (_view) {
                             'ACTIVE' => 'No active items. All caught up!',
                             'TO VERIFY' => 'Nothing to verify.',
+                            'REWORK' => 'Nothing to rework. All clear!',
                             _ => 'No history yet.',
                           },
                           textAlign: TextAlign.center,

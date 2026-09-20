@@ -66,21 +66,18 @@ void main() {
   });
 
   group('ReportDetailScreen TL gate UI', () {
-    /// Isar is not available in the widget-test VM, so the detail screen's
-    /// FutureBuilder lands on its "report no longer exists" state. The gate
-    /// buttons live on the Scaffold (outside that builder) and are driven by the
-    /// report passed in, so they can still be asserted on.
+    /// Isar is not available in the widget-test VM, so the watch stream yields
+    /// nothing and the screen keeps the report it was handed. The role-based bar
+    /// is driven by that report + the compile-time role, so it is assertable.
     Future<void> pumpDetail(
       WidgetTester tester,
       Report report, {
-      bool validationMode = false,
       String? userRoleOverride = 'team_leader',
     }) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ReportDetailScreen(
             report: report,
-            validationMode: validationMode,
             userRoleOverride: userRoleOverride,
           ),
         ),
@@ -90,53 +87,68 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('offers both giant validation actions in validation mode', (
+    testWidgets('a Team Leader gets the three giant gate buttons', (
       tester,
     ) async {
-      await pumpDetail(tester, Report()..type = 'work'..timestamp = DateTime(2026, 9, 17), validationMode: true);
+      await pumpDetail(
+        tester,
+        Report()..type = 'work'..timestamp = DateTime(2026, 9, 17),
+      );
 
-      expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsOneWidget);
-      expect(find.text('VALIDATE ON SITE (Take Photo)'), findsOneWidget);
-      // The "Dispute Shield" rejection action is part of the gate too.
-      expect(find.text('REJECT & REQUEST FIX'), findsOneWidget);
+      // Written-out giant buttons: never an ambiguous icon chip, never a tooltip.
+      expect(find.text('REMOTE'), findsOneWidget);
+      expect(find.text('ON SITE'), findsOneWidget);
+      expect(find.text('REJECT'), findsOneWidget);
+      expect(tester.widget<Icon>(find.byIcon(Icons.visibility)).size, 28);
+      expect(tester.widget<Icon>(find.byIcon(Icons.camera_alt)).size, 28);
+      // The bar's REJECT icon and the header's close button share Icons.close.
+      expect(find.byIcon(Icons.close), findsNWidgets(2));
+      // Every button is a single direct tap: no hidden choice menu.
+      expect(find.text('VALIDATE ON SITE'), findsNothing);
+      expect(find.text('VALIDATE REMOTELY'), findsNothing);
     });
 
-    testWidgets('hides the gate buttons outside validation mode', (
-      tester,
-    ) async {
-      await pumpDetail(tester, Report()..type = 'work'..timestamp = DateTime(2026, 9, 17));
+    testWidgets('a problem report never enters the gate', (tester) async {
+      await pumpDetail(
+        tester,
+        Report()..type = 'problem'..timestamp = DateTime(2026, 9, 17),
+      );
 
-      expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
-      expect(find.text('VALIDATE ON SITE (Take Photo)'), findsNothing);
-      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
+      expect(find.text('REMOTE'), findsNothing);
+      expect(find.text('ON SITE'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
+      // Nothing to lock either: a problem report goes straight to the owner.
+      expect(find.byIcon(Icons.lock), findsNothing);
     });
 
-    testWidgets('hides the gate buttons once the report is validated', (
-      tester,
-    ) async {
+    testWidgets('locks the bar once the report is validated', (tester) async {
       final validated = Report()
         ..type = 'work'
         ..timestamp = DateTime(2026, 9, 17)
         ..tlValidatedAt = DateTime.now()
         ..tlValidationType = 'physical';
-      await pumpDetail(tester, validated, validationMode: true);
+      await pumpDetail(tester, validated);
 
-      expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
-      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
+      expect(find.text('REMOTE'), findsNothing);
+      expect(find.text('ON SITE'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
+      // A decided report shows the disabled grey bar labelled with its stage
+      // (the header badge states the same thing, hence two matching labels).
+      expect(find.byIcon(Icons.lock), findsOneWidget);
+      expect(find.text('Pending Owner Approval'), findsNWidgets(2));
     });
 
-    testWidgets('a subcontractor never sees the gate buttons, even in '
-        'validation mode', (tester) async {
+    testWidgets('a subcontractor never sees the gate buttons', (tester) async {
       await pumpDetail(
         tester,
         Report()..type = 'work'..timestamp = DateTime(2026, 9, 17),
-        validationMode: true,
         userRoleOverride: 'subcontractor',
       );
 
-      expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
-      expect(find.text('VALIDATE ON SITE (Take Photo)'), findsNothing);
-      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
+      expect(find.text('REMOTE'), findsNothing);
+      expect(find.text('ON SITE'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
+      expect(find.byIcon(Icons.visibility), findsNothing);
     });
   });
 

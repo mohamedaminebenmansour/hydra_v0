@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../models/report.dart';
+import '../role.dart';
+import '../screens/owner_action_sheet.dart' show OwnerDecisionWriter;
 import '../services/database_service.dart';
 import '../services/report_local_service.dart';
 import '../services/sync_service.dart';
@@ -277,40 +279,54 @@ Future<bool> subFixAndResubmitFlow(BuildContext context, Report report) async {
   }
 }
 
-/// The Team Leader gate as sheet actions: the three giant decisions from the
-/// old detail screen, reusable from any surface that opens the report sheet.
+/// The Team Leader gate as sheet actions: the three-way decision, written out.
+///
+/// Three giant direct buttons — every one runs its flow on a single tap:
+///   - REMOTE   → the decision is written immediately, no photo;
+///   - ON SITE  → the camera captures the GPS proof (the distance decides
+///     whether the record is 'physical' or downgraded to 'remote');
+///   - REJECT   → the "Dispute Shield": the camera plus the mandatory voice
+///     explanation, appended to the thread as the TL's right-aligned red
+///     bubble.
 ReportSheetActions tlGateActions() => ReportSheetActions(
   buttons: [
     ReportSheetAction(
-      label: 'VALIDATE REMOTELY (Photo Only)',
-      color: Colors.blueGrey.shade700,
-      icon: Icons.cloud_done,
+      label: 'REMOTE',
+      color: Colors.green,
+      icon: Icons.visibility,
       onPressed: tlValidateRemotelyFlow,
     ),
     ReportSheetAction(
-      label: 'VALIDATE ON SITE (Take Photo)',
-      color: Colors.green.shade700,
+      label: 'ON SITE',
+      color: Colors.green,
       icon: Icons.camera_alt,
       onPressed: tlValidateOnSiteFlow,
     ),
     ReportSheetAction(
-      label: 'REJECT & REQUEST FIX',
-      color: Colors.red.shade700,
-      icon: Icons.gpp_bad,
+      label: 'REJECT',
+      color: Colors.red,
+      icon: Icons.close,
       onPressed: tlRejectFlow,
     ),
   ],
 );
 
+/// Returns true when the subcontractor owes a fix on this report: the Team
+/// Leader rejected it, or the Owner rejected it (a rejection never locks the
+/// conversation — the sub must still be able to argue or fix).
+bool subOwesAFix(Report report) =>
+    report.isTlRejected || report.ownerStatus == 'rejected';
+
 /// The subcontractor's single "FIX & RESUBMIT" action, shown when the Team
-/// Leader rejected the report (the red stage).
+/// Leader rejected the report (the red stage): one giant green camera button
+/// that opens the photo + voice capture flow.
 ReportSheetActions subFixActions() => ReportSheetActions(
   note: 'Rejected by the Team Leader — fix it, then resubmit with a new photo.',
   buttons: [
     ReportSheetAction(
       label: 'FIX & RESUBMIT',
-      color: Colors.green.shade700,
-      icon: Icons.build_circle,
+      color: Colors.green,
+      icon: Icons.camera_alt,
       onPressed: subFixAndResubmitFlow,
     ),
   ],
@@ -321,40 +337,111 @@ ReportSheetActions subFixActions() => ReportSheetActions(
 /// the legacy full-screen host, so the same report always shows the same
 /// buttons wherever it is opened.
 ///
-/// - A closed report (the Owner decided): no actions, ever.
-/// - A Team Leader in validation mode with a report still awaiting the gate:
-///   the three decision flows.
-/// - A subcontractor looking at a rejected report: "Fix & Resubmit".
-ReportSheetActions defaultActionsFor(
-  Report report, {
-  bool validationMode = false,
-  String? role,
-}) {
+/// - A closed report (the Owner decided): no actions — the sheet shows its
+///   disabled grey 'WORK CLOSED' bar.
+/// - A Team Leader and a report still awaiting the gate: REMOTE / ON SITE / REJECT.
+/// - A subcontractor looking at a rejected report: FIX & RESUBMIT.
+/// - Anything else: nothing to do, so no bar at all.
+ReportSheetActions defaultActionsFor(Report report, {String? role}) {
   if (isReportClosedByOwner(report)) return const ReportSheetActions();
-  final effectiveRole =
-      role ??
-      const String.fromEnvironment('USER_ROLE', defaultValue: 'subcontractor');
+  final effectiveRole = role ?? userRole;
   if (effectiveRole == 'team_leader') {
-    return validationMode && report.needsTlValidation
+    // `needsTlValidation` is (work|material) && tlValidatedAt == null: the
+    // "TL && tlValidatedAt == null" rule plus the domain guard that keeps
+    // 'problem' reports — which never pass the gate — out of the TL's queue.
+    return report.needsTlValidation
         ? tlGateActions()
         : const ReportSheetActions();
   }
-  return report.isTlRejected ? subFixActions() : const ReportSheetActions();
+  return subOwesAFix(report) ? subFixActions() : const ReportSheetActions();
+}
+
+// ---------------------------------------------------------------------------
+// The Owner's giant actions for the report sheet.
+//
+// The Owner is a thin client over Supabase: his decisions go straight to the
+// `reports.owner_status` column through the same [OwnerDecisionWriter] seam the
+// map's decision sheet already uses (defined in `owner_action_sheet.dart`,
+// injected in tests). A REJECTION keeps the bar alive — the owner can change
+// his mind, and the field team keeps its FIX & RESUBMIT.
+// ---------------------------------------------------------------------------
+
+/// One owner decision: writes [status] to the cloud row keyed by the report's
+/// local id (carried in `report.userId` by the owner's row mapper).
+ReportActionCallback ownerDecideFlow(
+  String status,
+  OwnerDecisionWriter write,
+) => (BuildContext context, Report report) async {
+  try {
+    await write(report.userId, status);
+    if (!context.mounted) return true;
+    notifyGate(context, 'Decision saved');
+    return true;
+  } catch (e, st) {
+    debugPrint('OwnerFlow: decision "$status" failed: $e\n$st');
+    if (!context.mounted) return false;
+    notifyGate(
+      context,
+      'Decision not saved — connect and try again.',
+    );
+    return false;
+  }
+};
+
+/// The owner's action bar for one report: the type-specific primary decision
+/// plus REJECT, both live while the report is not finally decided (a
+/// rejection keeps the bar — see [subOwesAFix]).
+ReportSheetActions ownerReportActions({
+  required Report report,
+  required OwnerDecisionWriter writeDecision,
+}) {
+  final type = report.type;
+  final primary = switch (type) {
+    'problem' => (
+      'ACKNOWLEDGE',
+      'acknowledged',
+      Colors.blue,
+      Icons.visibility,
+    ),
+    'material' => (
+      'ORDER',
+      'ordered',
+      Colors.orange,
+      Icons.local_shipping,
+    ),
+    _ => ('VALIDATE', 'validated', Colors.green, Icons.check_circle),
+  };
+  return ReportSheetActions(
+    buttons: [
+      ReportSheetAction(
+        label: primary.$1,
+        color: primary.$3,
+        icon: primary.$4,
+        onPressed: ownerDecideFlow(primary.$2, writeDecision),
+      ),
+      ReportSheetAction(
+        label: 'REJECT',
+        color: Colors.red,
+        icon: Icons.close,
+        onPressed: ownerDecideFlow('rejected', writeDecision),
+      ),
+    ],
+  );
 }
 
 /// One-liner for surfaces (list tile, map pin, dashboard): resolves the
-/// default actions for [report] and opens the shared detail + chat sheet.
-/// Passing [validationMode] enables the Team Leader gate on the 'TO VERIFY'
-/// tab; [selfActor] overrides the compile-time role for message wording.
+/// default actions for [report] and opens the shared report sheet.
+/// [role] overrides the compile-time role (tests); [selfActor] overrides the
+/// actor that labels the bubbles a capture flow adds.
 Future<bool?> showDefaultReportDetailSheet(
   BuildContext context,
   Report report, {
-  bool validationMode = false,
+  String? role,
   String? selfActor,
 }) => showReportDetailSheet(
   context,
   report: report,
-  actions: defaultActionsFor(report, validationMode: validationMode),
+  actions: defaultActionsFor(report, role: role),
   selfActor: selfActor,
 );
 

@@ -1,17 +1,21 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/report.dart';
 import '../screens/site_map_screen.dart';
 import '../services/database_service.dart';
-import '../services/report_local_service.dart';
-import '../services/sync_service.dart';
+import 'report_stage.dart';
 import 'report_thumbnail.dart';
-import 'timeline_audio_player.dart';
+import 'report_timeline.dart';
+
+// The report-stage vocabulary ([ReportStage], [reportStageOf],
+// [reportStageStyle], [reportActionLabel], [reportTypeEmoji]) lives in
+// `report_stage.dart` so the chat timeline can share it without importing this
+// widget. It is re-exported here so every existing importer of this file keeps
+// compiling untouched.
+export 'report_stage.dart';
 
 // ---------------------------------------------------------------------------
 // The one place a report is shown and discussed.
@@ -24,99 +28,9 @@ import 'timeline_audio_player.dart';
 // [showReportDetailSheet] — and role-specific actions are injected instead of
 // being re-implemented.
 // ---------------------------------------------------------------------------
-
-/// The five validation states the product talks about, resolved once from the
-/// two independent layers (the Team Leader gate and the Owner decision).
-///
-/// This is the single source of truth for "where is this report right now?" —
-/// the sheet renders it as a badge today, and the History stepper (Step 3)
-/// renders the same value as three nodes.
-enum ReportStage {
-  pendingTl,
-  rejectedByTl,
-  validatedByTl,
-  pendingOwner,
-  closedByOwner,
-}
-
-/// Owner statuses that mean the owner is done with the report.
-const Set<String> _closedOwnerStatuses = {
-  'validated',
-  'approved',
-  'acknowledged',
-  'ordered',
-  'rejected',
-};
-
-/// True when the Owner has taken a final decision. The owner layer is the last
-/// word of the workflow: once closed, a report stops being actionable even if
-/// the Team Leader had rejected it earlier in the timeline.
-bool isReportClosedByOwner(Report report) =>
-    _closedOwnerStatuses.contains(report.ownerStatus);
-
-/// Resolves the report's current stage.
-///
-/// A closed report is closed (the owner's decision overrides everything), then
-/// a Team Leader rejection short-circuits (the report is back with the
-/// subcontractor), then the TL gate decides. Reports that never pass the gate
-/// ('problem' reports) go straight to the owner layer.
-ReportStage reportStageOf(Report report) {
-  if (isReportClosedByOwner(report)) return ReportStage.closedByOwner;
-  if (report.isTlRejected) return ReportStage.rejectedByTl;
-  final ownerClosed = isReportClosedByOwner(report);
-  if (report.isTlVerified) {
-    return ownerClosed ? ReportStage.closedByOwner : ReportStage.pendingOwner;
-  }
-  if (!report.needsTlValidation) {
-    return ownerClosed ? ReportStage.closedByOwner : ReportStage.pendingOwner;
-  }
-  return ReportStage.pendingTl;
-}
-
-/// Icon, color and label of a stage. The label of [ReportStage.closedByOwner]
-/// depends on what the owner actually decided, hence [ownerStatus].
-(IconData, Color, String) reportStageStyle(
-  ReportStage stage, {
-  String ownerStatus = '',
-}) => switch (stage) {
-  ReportStage.pendingTl => (
-    Icons.hourglass_top,
-    Colors.orange,
-    'Pending TL Validation',
-  ),
-  ReportStage.rejectedByTl => (
-    Icons.gpp_bad,
-    Colors.red,
-    'Rejected by TL — Needs Fix',
-  ),
-  ReportStage.validatedByTl => (Icons.verified, Colors.green, 'Approved by TL'),
-  ReportStage.pendingOwner => (
-    Icons.supervisor_account,
-    Colors.blue,
-    'Pending Owner Approval',
-  ),
-  ReportStage.closedByOwner => switch (ownerStatus) {
-    'rejected' => (Icons.cancel, Colors.red, 'Rejected by Owner'),
-    'ordered' => (Icons.local_shipping, Colors.orange, 'Material Ordered'),
-    'acknowledged' => (Icons.visibility, Colors.blue, 'Acknowledged by Owner'),
-    _ => (Icons.check_circle, Colors.green, 'Approved by Owner'),
-  },
-};
-
-/// Human wording for a thread event, so a bubble says what happened instead of
-/// only showing media (the previous timeline printed nothing).
-String reportActionLabel(String action) => switch (action) {
-  'submit' => 'Reported',
-  'resubmit' => 'Fixed & resubmitted',
-  'reject' => 'Rejected',
-  'fix_note' => 'Fix explanation',
-  'comment' => 'Message',
-  _ => 'Update',
-};
-
 /// The actor a chat message is attributed to, derived from the compile-time
-/// role (`--dart-define=USER_ROLE=...`). Only used to label messages and to
-/// pick the wording of the composer — never to gate functionality.
+/// role (`--dart-define=USER_ROLE=...`). Only used to label the bubbles a
+/// capture flow adds to the thread — never to gate functionality.
 String defaultActorForRole() => switch (const String.fromEnvironment(
   'USER_ROLE',
   defaultValue: 'subcontractor',
@@ -125,201 +39,6 @@ String defaultActorForRole() => switch (const String.fromEnvironment(
   'owner' => 'owner',
   _ => 'sub',
 };
-
-/// The shared Subcontractor <-> Team Leader thread for one report.
-///
-/// The thread *is* the report's `timelineEvents`: every bubble is one immutable
-/// event (submission, rejection with its reason, fix explanation, message), so
-/// the whole dispute history is preserved and travels with the report through
-/// the existing sync — no second chat model, no second table.
-///
-/// Reused by the report sheet today, and by the History card in a later step.
-class ReportChatThread extends StatelessWidget {
-  const ReportChatThread({super.key, required this.report, this.emptyHint});
-
-  final Report report;
-
-  /// Shown when the report has no events at all yet.
-  final String? emptyHint;
-
-  @override
-  Widget build(BuildContext context) {
-    final events = report.parseTimelineEvents();
-    if (events.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Text(
-          emptyHint ?? 'No messages yet.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
-        ),
-      );
-    }
-    return Column(
-      children: [
-        for (final event in events) ...[
-          _ChatBubble(event: event),
-          const SizedBox(height: 12),
-        ],
-      ],
-    );
-  }
-}
-
-/// One immutable chat bubble: subcontractor events lean left, Team Leader
-/// events lean right, and a rejection is ringed in red.
-class _ChatBubble extends StatelessWidget {
-  const _ChatBubble({required this.event});
-
-  final Map<String, dynamic> event;
-
-  @override
-  Widget build(BuildContext context) {
-    final actor = (event['actor'] ?? '').toString();
-    final action = (event['action'] ?? '').toString();
-    final text = (event['text'] ?? '').toString();
-    final isSub = actor == 'sub';
-    final isReject = action == 'reject';
-    final when = DateTime.tryParse((event['time'] ?? '').toString())?.toLocal();
-    final photo = ReportLocalService.resolveMedia(
-      (event['photoUrl'] ?? '').toString(),
-      '',
-    );
-    final voice = ReportLocalService.resolveMedia(
-      (event['voiceUrl'] ?? '').toString(),
-      '',
-    );
-    final hasPhoto = photo.origin != MediaOrigin.none;
-    final hasVoice = voice.origin != MediaOrigin.none;
-    final accent = isReject
-        ? Colors.red
-        : (isSub ? Colors.blue.shade800 : Colors.blueGrey);
-    final background = isReject
-        ? Colors.red.shade50
-        : (isSub ? Colors.blue.shade50 : Colors.grey.shade100);
-
-    return Align(
-      alignment: isSub ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 360),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(12),
-          border: isReject ? Border.all(color: Colors.red, width: 2) : null,
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isSub ? Icons.engineering_outlined : Icons.gavel,
-                  size: 18,
-                  color: accent,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isSub ? 'Subcontractor' : 'Team Leader',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: accent,
-                    ),
-                  ),
-                ),
-                Text(
-                  reportActionLabel(action),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: accent,
-                  ),
-                ),
-                if (when != null) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    DateFormat('d MMM, HH:mm').format(when),
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  ),
-                ],
-              ],
-            ),
-            if (text.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(text, style: const TextStyle(fontSize: 15, height: 1.35)),
-            ],
-            if (hasPhoto) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  height: 180,
-                  width: double.infinity,
-                  child: _eventPhoto(
-                    photo.location,
-                    photo.origin == MediaOrigin.network,
-                  ),
-                ),
-              ),
-            ],
-            if (hasVoice) ...[
-              const SizedBox(height: 8),
-              TimelineAudioPlayer(
-                voicePath: voice.location,
-                voiceUrl: voice.location,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Thread media works offline and online: the local file is used while it
-  /// still exists, the cached cloud copy otherwise.
-  Widget _eventPhoto(String location, bool isNetwork) {
-    if (isNetwork) {
-      return CachedNetworkImage(
-        imageUrl: location,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        placeholder: (context, url) => Container(
-          color: Colors.grey.shade200,
-          child: const Icon(Icons.image_not_supported),
-        ),
-        errorWidget: (context, url, error) => Container(
-          color: Colors.grey.shade300,
-          child: const Icon(Icons.broken_image),
-        ),
-      );
-    }
-    return Image.file(
-      File(location),
-      fit: BoxFit.cover,
-      width: double.infinity,
-      errorBuilder: (context, error, stackTrace) => Container(
-        color: Colors.grey.shade300,
-        child: const Icon(Icons.broken_image),
-      ),
-    );
-  }
-}
-
-/// The report-type emoji used on the sheet's type chip (🔨 work, ️ problem,
-/// 📦 material).
-String reportTypeEmoji(String type) => switch (type) {
-  'problem' => '⚠️',
-  'material' => '📦',
-  _ => '🔨',
-};
-
-/// Sends one chat message for a report. Injected in tests; the default appends
-/// the event locally (offline-first) and queues it for the cloud.
-typedef ReportCommentSender =
-    Future<void> Function(Report report, String text, String actor);
 
 /// Live view of one report, so the sheet keeps up with writes made underneath
 /// it (a sync pulling in the Team Leader's answer, a background edit). An
@@ -339,7 +58,13 @@ typedef ReportLocationOpener =
 typedef ReportActionCallback =
     Future<bool> Function(BuildContext context, Report report);
 
-/// One giant button at the bottom of the sheet.
+/// One role-specific action in the sheet's bottom bar.
+///
+/// The bar is deliberately written out: one action fills the whole width,
+/// three share it 33/34/33, and each one is a giant solid-coloured button
+/// (icon + short caption) that runs its flow on a single tap — never an
+/// ambiguous icon chip. The sheet itself stays workflow-free: the wording,
+/// the colours and the flows all come from the injected action.
 class ReportSheetAction {
   const ReportSheetAction({
     required this.label,
@@ -351,14 +76,17 @@ class ReportSheetAction {
   final String label;
   final Color color;
   final IconData icon;
+
+  /// The flow run when the button is tapped.
   final ReportActionCallback onPressed;
 }
 
 /// The role-specific bottom bar of the sheet.
 ///
-/// Empty [buttons] is a legitimate configuration: the sheet then shows the
-/// report's status banner instead, which is exactly what a closed or read-only
-/// report needs. This is how the Team Leader gate, the subcontractor's
+/// Empty [buttons] is a legitimate configuration: the sheet then shows either
+/// nothing (a report nobody is asked to act on right now) or the disabled grey
+/// bar of a report that is already decided ('WORK CLOSED' once the owner has the
+/// last word). This is how the Team Leader gate, the subcontractor's
 /// "Fix & Resubmit" and any future workflow plug in without editing the sheet.
 class ReportSheetActions {
   const ReportSheetActions({this.buttons = const [], this.note});
@@ -371,19 +99,22 @@ class ReportSheetActions {
   bool get isEmpty => buttons.isEmpty;
 }
 
-/// Opens the report detail + chat sheet.
+/// Opens the report detail sheet.
 ///
 /// This is THE entry point: a list tile, a map marker and any dashboard call it
 /// with the report they already hold, so the report looks and behaves the same
 /// everywhere.
 ///
-/// Returns true when a chat message was sent (the caller can refresh), and null
-/// when the sheet was dismissed without a message.
+/// The thread is **read-only**: the only way a message joins the timeline is a
+/// capture flow (Reject & Request Fix, Fix & Resubmit) reached from the bottom
+/// bar, so this sheet has no text input of any kind.
+///
+/// Returns true when an action changed the report (the caller can refresh), and
+/// null when the sheet was dismissed without a decision.
 Future<bool?> showReportDetailSheet(
   BuildContext context, {
   required Report report,
   ReportWatcher? watch,
-  ReportCommentSender? sendComment,
   ReportLocationOpener? onOpenLocation,
   ReportSheetActions actions = const ReportSheetActions(),
   String? selfActor,
@@ -399,7 +130,6 @@ Future<bool?> showReportDetailSheet(
     builder: (_) => ReportDetailBottomSheet(
       report: report,
       watch: watch ?? defaultWatchReport,
-      sendComment: sendComment ?? defaultSendComment,
       onOpenLocation: onOpenLocation ?? _defaultOpenLocation,
       actions: actions,
       selfActor: selfActor ?? defaultActorForRole(),
@@ -421,50 +151,31 @@ Stream<Report?> defaultWatchReport(int reportId) {
   }
 }
 
-/// Appends the message to the report's thread and queues it for the cloud.
-///
-/// The local append always succeeds, so an offline device still shows the
-/// message immediately; the push retries on the next sync trigger, and
-/// [SyncService] sends `timeline_events` on both its insert and update branch.
-Future<void> defaultSendComment(
-  Report report,
-  String text,
-  String actor,
-) async {
-  await DatabaseService.appendReportEvent(
-    report,
-    actor: actor,
-    // A Team Leader message is a plain comment; a subcontractor message is the
-    // explanation attached to his fix.
-    action: actor == 'sub' ? 'fix_note' : 'comment',
-    text: text,
-  );
-  unawaited(SyncService.syncPendingReports());
-}
-
 /// Opens the app's own site map (internal `flutter_map` screen) instead of
-/// launching an external Google Maps app. Focusing that map on this report's
-/// pin arrives with the map step.
+/// launching an external Google Maps app, centered on this report's pin.
 void _defaultOpenLocation(BuildContext context, Report report) {
-  Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (_) => const SiteMapScreen()));
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => SiteMapScreen(focusReport: report),
+    ),
+  );
 }
 
-/// The reusable report sheet: photo, timestamp, GPS coordinates, validation
-/// status, the Subcontractor <-> Team Leader thread, a context-aware message
-/// box, and whatever giant action buttons the opening role passes in.
+/// The reusable report sheet: a WhatsApp-Profile header (circular photo,
+/// type, timestamp, validation badge, map button),
+/// the WhatsApp-style Subcontractor <-> Team Leader thread — strictly read-only,
+/// with no text input anywhere — and the giant role-specific buttons the opening
+/// role passes in.
 ///
 /// It owns no business logic of its own — everything that touches storage or a
-/// workflow is injected ([watch], [sendComment], [onOpenLocation], [actions]),
-/// which is what makes it openable from a list tile, a map marker or any
-/// dashboard without duplicating a single line of that logic.
+/// workflow is injected ([watch], [onOpenLocation], [actions]), which is what
+/// makes it openable from a list tile, a map marker or any dashboard without
+/// duplicating a single line of that logic.
 class ReportDetailBottomSheet extends StatefulWidget {
   const ReportDetailBottomSheet({
     super.key,
     required this.report,
     required this.watch,
-    required this.sendComment,
     this.onOpenLocation = _defaultOpenLocation,
     this.actions = const ReportSheetActions(),
     this.selfActor = 'sub',
@@ -475,12 +186,11 @@ class ReportDetailBottomSheet extends StatefulWidget {
   final Report report;
 
   final ReportWatcher watch;
-  final ReportCommentSender sendComment;
   final ReportLocationOpener onOpenLocation;
   final ReportSheetActions actions;
 
-  /// The person using the sheet: 'sub', 'tl' or 'owner'. Only decides the
-  /// wording of the message box, never what is allowed.
+  /// The person using the sheet: 'sub', 'tl' or 'owner'. Only labels the bubbles
+  /// the capture flows add, never what is allowed.
   final String selfActor;
 
   @override
@@ -493,31 +203,27 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
   /// arrives from [ReportDetailBottomSheet.watch].
   late Report _report;
 
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
   StreamSubscription<Report?>? _liveSub;
-
-  /// True while a message is being written.
-  bool _sending = false;
 
   /// Index of the action button currently running (null when idle), so only
   /// that button shows a spinner and every button is disabled meanwhile.
   int? _runningAction;
 
-  /// True once a message was sent, so the caller knows to refresh when the
-  /// sheet closes.
-  bool _sentMessage = false;
-
   @override
   void initState() {
     super.initState();
     _report = widget.report;
+    // The thread is on screen: the report's History card drops its unread dot.
+    unawaited(DatabaseService.markReportRead(_report));
     _liveSub = widget
         .watch(widget.report.id)
         .listen(
           (latest) {
             if (!mounted || latest == null) return;
             setState(() => _report = latest);
+            // A live refresh the user is looking at counts as reading too:
+            // re-mark read so a dot never lingers on an open thread.
+            unawaited(DatabaseService.markReportRead(latest));
           },
           onError: (Object e, StackTrace st) {
             debugPrint('ReportSheet: live view failed: $e\n$st');
@@ -528,58 +234,31 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
   @override
   void dispose() {
     _liveSub?.cancel();
-    _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
   ReportStage get _stage => reportStageOf(_report);
 
-  /// True when the Team Leader rejected the report: the subcontractor now owes
-  /// an explanation, so his message box is highlighted and re-worded.
-  bool get _needsFix => _stage == ReportStage.rejectedByTl;
-
-  bool get _isSub => widget.selfActor == 'sub';
-
-  /// Sends the typed message: it goes straight into the report's shared thread
-  /// (offline-first — the local append always succeeds, the cloud push retries).
-  Future<void> _send() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
-    try {
-      await widget.sendComment(_report, text, widget.selfActor);
-      if (!mounted) return;
-      _controller.clear();
-      _focusNode.unfocus();
-      setState(() {
-        _sending = false;
-        _sentMessage = true;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Message sent')));
-    } catch (e, st) {
-      debugPrint('ReportSheet: sending the message failed: $e\n$st');
-      if (!mounted) return;
-      setState(() => _sending = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not send — check connection')),
-      );
-    }
-  }
-
   /// Runs one injected action, showing a spinner on that button only, then
   /// closes the sheet when the action reports that it is finished.
   Future<void> _runAction(int index) async {
     if (_runningAction != null) return;
-    final action = widget.actions.buttons[index];
+    await _runFlow(index, widget.actions.buttons[index]);
+  }
+
+  /// Runs one flow, then pops the sheet with true when it changed the report
+  /// (the caller refreshes) or keeps it open when the flow returned false.
+  Future<void> _runFlow(int index, ReportSheetAction action) async {
     setState(() => _runningAction = index);
     try {
       final close = await action.onPressed(context, _report);
       if (!mounted) return;
       setState(() => _runningAction = null);
-      if (close) Navigator.of(context).pop(_sentMessage);
+      // The user's own capture flow just appended an event (which flagged the
+      // card unread): the actor obviously saw it, so re-mark read — even when
+      // the sheet pops, the History card must not show a self-made dot.
+      unawaited(DatabaseService.markReportRead(_report));
+      if (close) Navigator.of(context).pop(true);
     } catch (e, st) {
       debugPrint('ReportSheet: action "${action.label}" failed: $e\n$st');
       if (!mounted) return;
@@ -598,139 +277,141 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
       height: MediaQuery.sizeOf(context).height * 0.92,
       child: Column(
         children: [
-          // Photo and thread share the remaining space, so the layout adapts to
-          // every screen instead of overflowing on short devices.
-          Expanded(flex: 4, child: _photoHeader(context)),
-          _facts(context),
-          const Divider(height: 1),
+          // ── Top 8%: compact header (thumbnail + type + time) ────────────────
+          _compactHeader(context),
+
+          // ── Middle 82%: the role-styled timeline ─────────────────────────────
+          // The Owner reads it as a Git commit log; the field roles keep the
+          // WhatsApp-style chat.
           Expanded(
-            flex: 5,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: ReportChatThread(report: _report),
-            ),
+            child: widget.selfActor == 'owner'
+                ? GitReportTimeline(
+                    report: _report,
+                    emptyHint: 'No events yet.',
+                  )
+                : ReportTimeline(
+                    report: _report,
+                    emptyHint: 'No messages yet.',
+                  ),
           ),
-          _composer(context),
+
+          // ── Bottom ~10%: the giant role-specific action bar ──────────────────
           _actionBar(context),
         ],
       ),
     );
   }
 
-  /// The giant action buttons injected by the opening surface, with a spinner
-  /// on the one that is running. An empty configuration renders nothing so a
-  /// closed report shows only its status banner.
-  Widget _actionBar(BuildContext context) {
-    final note = widget.actions.note;
-    final buttons = widget.actions.buttons;
-    if ((note == null || note.isEmpty) && buttons.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (note != null && note.isNotEmpty) ...[
-            Text(
-              note,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 8),
-          ],
-          for (var i = 0; i < buttons.length; i++) ...[
-            SizedBox(
-              width: double.infinity,
-              height: 72,
-              child: FilledButton.icon(
-                onPressed: _runningAction != null ? null : () => _runAction(i),
-                style: FilledButton.styleFrom(
-                  backgroundColor: buttons[i].color,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: _runningAction == i
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Icon(buttons[i].icon),
-                label: Text(
-                  buttons[i].label,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-            ),
-            if (i < buttons.length - 1) const SizedBox(height: 10),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// The submitted photo with the validation status pinned on it, so the very
-  /// first thing anyone sees is what was reported and where it stands.
-  Widget _photoHeader(BuildContext context) {
+  /// The WhatsApp-Profile header: a circular photo avatar, the big report
+  /// type with the bold timestamp under it, the validation badge, and a map
+  /// button that opens the internal site map centered on the report's pin.
+  /// Content-sized (no fixed height), so it can never pixel-overflow, and it
+  /// never shows raw latitude/longitude text.
+  Widget _compactHeader(BuildContext context) {
     final (icon, color, label) = reportStageStyle(
       _stage,
       ownerStatus: _report.ownerStatus,
     );
-    return SizedBox(
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
+    final when = DateFormat(
+      'd MMM, hh:mm a',
+    ).format(_report.timestamp.toLocal());
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      padding: const EdgeInsets.all(8),
+      child: Row(
         children: [
-          ReportThumbnail(report: _report),
-          Positioned(
-            top: 10,
-            right: 10,
-            child: Material(
-              color: Colors.white.withValues(alpha: 0.9),
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => Navigator.of(context).pop(_sentMessage),
-                child: const SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Icon(Icons.close, size: 28),
+          // Circular photo of the report (Hybrid Shield: local file while it
+          // exists, cached cloud copy otherwise, placeholder icon if none).
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: Colors.grey.shade200,
+            child: ClipOval(
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: ReportThumbnail(
+                  report: _report,
+                  size: 56,
+                  iconSize: 28,
                 ),
               ),
             ),
           ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.55),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(icon, color: color, size: 22),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+          const SizedBox(width: 12),
+          // Report type, then the full timestamp, then the validation badge.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _typeTitle(_report.type),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: _typeColor(_report.type),
                   ),
-                ],
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  when,
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 14, color: color),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // The map button opens the internal site map centered on the
+          // report's pin — no raw coordinates in the header, ever.
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            color: Colors.blue,
+            tooltip: 'Open map',
+            onPressed: () => widget.onOpenLocation(context, _report),
+          ),
+          // Close button.
+          InkWell(
+            onTap: () => Navigator.of(context).pop(),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
               ),
+              child: const Icon(Icons.close, size: 22),
             ),
           ),
         ],
@@ -738,167 +419,143 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
     );
   }
 
-  /// Type, timestamp and GPS coordinates — the three facts anyone needs before
-  /// reading the thread. The coordinate row opens the app's own map.
-  Widget _facts(BuildContext context) {
-    final when = DateFormat(
-      'EEE d MMM, HH:mm',
-    ).format(_report.timestamp.toLocal());
-    final hasGps = _report.lat != 0 || _report.lng != 0;
-    final coords = hasGps
-        ? '${_report.lat.toStringAsFixed(5)}, ${_report.lng.toStringAsFixed(5)}'
-        : 'No GPS captured';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+  /// Emoji + uppercase word for the report type, colored like the map pins.
+  String _typeTitle(String type) => switch (type) {
+    'problem' => '${reportTypeEmoji(type)} PROBLEM',
+    'material' => '${reportTypeEmoji(type)} MATERIAL',
+    _ => '${reportTypeEmoji(type)} WORK',
+  };
+
+  Color _typeColor(String type) => switch (type) {
+    'problem' => Colors.red.shade800,
+    'material' => Colors.orange.shade900,
+    _ => Colors.blue.shade800,
+  };
+
+  /// The report's bottom action bar: the giant, unambiguous decision.
+  ///
+  /// The injected actions are rendered as solid full-width buttons. One action
+  /// fills the whole bar; the Team Leader's three-way gate shares it roughly
+  /// 33/34/33. Every button runs its flow on a single tap.
+  ///
+  /// A report nobody can act on any more gets a disabled grey bar instead:
+  /// 'WORK CLOSED' once the Owner had the last word, or the stage label with a
+  /// lock (the Team Leader already signed the report off).
+  Widget _actionBar(BuildContext context) {
+    final note = widget.actions.note;
+    final buttons = widget.actions.buttons;
+    if (buttons.isEmpty) {
+      if (isReportClosedByOwner(_report)) return _disabledBar('WORK CLOSED');
+      if (!reportStaysActionableLock(_report)) return const SizedBox.shrink();
+      final label = reportStageStyle(
+        _stage,
+        ownerStatus: _report.ownerStatus,
+      ).$3;
+      return _disabledBar(label, locked: true);
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      color: Colors.grey.shade50,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          if (note != null && note.isNotEmpty) ...[
+            Text(
+              note,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 6),
+          ],
           Row(
             children: [
-              _typeChip(_report.type),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  when,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+              for (var i = 0; i < buttons.length; i++) ...[
+                Expanded(child: _giantActionButton(context, i)),
+                if (i < buttons.length - 1) const SizedBox(width: 12),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The disabled grey bar: 'WORK CLOSED' for an owner-decided report, or the
+  /// current stage plus a lock when the report is simply out of reach.
+  Widget _disabledBar(String label, {bool locked = false}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+      color: Colors.grey.shade200,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (locked) ...[
+            const Icon(Icons.lock, size: 26, color: Colors.grey),
+            const SizedBox(height: 4),
+          ],
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One giant action: an icon of size 28 with its caption underneath, on the
+  /// action's own solid colour. A single action fills the bar; two or three
+  /// share it equally via [Expanded], so they can never pixel-overflow.
+  Widget _giantActionButton(BuildContext context, int index) {
+    final action = widget.actions.buttons[index];
+    final running = _runningAction == index;
+    return Material(
+      color: action.color,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: running || _runningAction != null
+            ? null
+            : () => _runAction(index),
+        child: SizedBox(
+          width: double.infinity,
+          height: 96,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (running)
+                const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Colors.white,
                   ),
+                )
+              else
+                Icon(action.icon, size: 28, color: Colors.white),
+              const SizedBox(height: 6),
+              Text(
+                action.label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Colors.white,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          InkWell(
-            onTap: hasGps
-                ? () => widget.onOpenLocation(context, _report)
-                : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on, size: 20, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(coords, style: const TextStyle(fontSize: 14)),
-                  ),
-                  if (hasGps)
-                    Icon(
-                      Icons.map_outlined,
-                      size: 20,
-                      color: Colors.grey.shade600,
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Emoji + word for the report type, color-coded like the map pins.
-  Widget _typeChip(String type) {
-    final (background, foreground) = switch (type) {
-      'problem' => (Colors.red.shade50, Colors.red.shade800),
-      'material' => (Colors.amber.shade100, Colors.orange.shade900),
-      _ => (Colors.blue.shade50, Colors.blue.shade800),
-    };
-    final label = switch (type) {
-      'problem' => 'Problem',
-      'material' => 'Material',
-      _ => 'Work',
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        '${reportTypeEmoji(type)} $label',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: foreground,
         ),
-      ),
-    );
-  }
-
-  /// The message box. It is highlighted (red border, explanation wording) when
-  /// the Team Leader rejected the report, so the subcontractor can say how he
-  /// fixed it — the "chat input on rejected" behaviour, visible at a glance.
-  Widget _composer(BuildContext context) {
-    final highlight = _needsFix && _isSub;
-    final hint = _needsFix
-        ? (_isSub
-              ? 'Explain how you fixed it…'
-              : 'Write a message about the fix…')
-        : (_isSub ? 'Explain or ask something…' : 'Write a message…');
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      decoration: BoxDecoration(
-        color: highlight ? Colors.red.shade50 : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: highlight ? Colors.red : Colors.grey.shade300,
-            width: highlight ? 2 : 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _send(),
-              decoration: InputDecoration(
-                hintText: hint,
-                isDense: true,
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 56,
-            height: 56,
-            child: FilledButton(
-              onPressed: _sending ? null : _send,
-              style: FilledButton.styleFrom(
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: _sending
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.send, size: 26),
-            ),
-          ),
-        ],
       ),
     );
   }
 }
+
+// ---------------------------------------------------------------------------

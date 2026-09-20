@@ -174,6 +174,22 @@ class DatabaseService {
     );
   }
 
+  /// Marks a report as read by the local user (the History card's unread
+  /// dot disappears). Called by the report sheet when the thread is on
+  /// screen. No-op (with a log line) when the local database is not open —
+  /// the Owner's thin client has no Isar and simply never shows the dot.
+  static Future<void> markReportRead(Report report) async {
+    if (!isInitialized) {
+      debugPrint('DatabaseFlow: report ${report.id} read state skipped '
+          '(no local database)');
+      return;
+    }
+    if (report.isReadByUser) return;
+    report.isReadByUser = true;
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint('DatabaseFlow: report ${report.id} marked read');
+  }
+
   /// Appends one event to a report's shared thread (the Subcontractor <->
   /// Team Leader chat) and re-queues the report for the next cloud push, so a
   /// message typed on this device reaches the other device — the push path

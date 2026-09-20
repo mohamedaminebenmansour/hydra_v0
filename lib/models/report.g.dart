@@ -42,129 +42,134 @@ const ReportSchema = CollectionSchema(
       name: r'isPhotoSynced',
       type: IsarType.bool,
     ),
-    r'isRetryable': PropertySchema(
+    r'isReadByUser': PropertySchema(
       id: 5,
+      name: r'isReadByUser',
+      type: IsarType.bool,
+    ),
+    r'isRetryable': PropertySchema(
+      id: 6,
       name: r'isRetryable',
       type: IsarType.bool,
     ),
-    r'isSynced': PropertySchema(id: 6, name: r'isSynced', type: IsarType.bool),
+    r'isSynced': PropertySchema(id: 7, name: r'isSynced', type: IsarType.bool),
     r'isVoiceSynced': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'isVoiceSynced',
       type: IsarType.bool,
     ),
-    r'lat': PropertySchema(id: 8, name: r'lat', type: IsarType.double),
-    r'lng': PropertySchema(id: 9, name: r'lng', type: IsarType.double),
+    r'lat': PropertySchema(id: 9, name: r'lat', type: IsarType.double),
+    r'lng': PropertySchema(id: 10, name: r'lng', type: IsarType.double),
     r'mobileId': PropertySchema(
-      id: 10,
+      id: 11,
       name: r'mobileId',
       type: IsarType.string,
     ),
     r'ownerStatus': PropertySchema(
-      id: 11,
+      id: 12,
       name: r'ownerStatus',
       type: IsarType.string,
     ),
     r'ownerStatusAt': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'ownerStatusAt',
       type: IsarType.dateTime,
     ),
     r'photoPath': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'photoPath',
       type: IsarType.string,
     ),
     r'photoStatus': PropertySchema(
-      id: 14,
+      id: 15,
       name: r'photoStatus',
       type: IsarType.string,
     ),
     r'photoUrl': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'photoUrl',
       type: IsarType.string,
     ),
     r'problemCategory': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'problemCategory',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 17, name: r'status', type: IsarType.string),
+    r'status': PropertySchema(id: 18, name: r'status', type: IsarType.string),
     r'supabaseId': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'timelineEvents': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'timelineEvents',
       type: IsarType.stringList,
     ),
     r'timestamp': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'tlRejectionPhotoPath': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'tlRejectionPhotoPath',
       type: IsarType.string,
     ),
     r'tlRejectionPhotoUrl': PropertySchema(
-      id: 22,
+      id: 23,
       name: r'tlRejectionPhotoUrl',
       type: IsarType.string,
     ),
     r'tlRejectionVoicePath': PropertySchema(
-      id: 23,
+      id: 24,
       name: r'tlRejectionVoicePath',
       type: IsarType.string,
     ),
     r'tlRejectionVoiceUrl': PropertySchema(
-      id: 24,
+      id: 25,
       name: r'tlRejectionVoiceUrl',
       type: IsarType.string,
     ),
     r'tlValidatedAt': PropertySchema(
-      id: 25,
+      id: 26,
       name: r'tlValidatedAt',
       type: IsarType.dateTime,
     ),
     r'tlValidationPhotoPath': PropertySchema(
-      id: 26,
+      id: 27,
       name: r'tlValidationPhotoPath',
       type: IsarType.string,
     ),
     r'tlValidationPhotoUrl': PropertySchema(
-      id: 27,
+      id: 28,
       name: r'tlValidationPhotoUrl',
       type: IsarType.string,
     ),
     r'tlValidationType': PropertySchema(
-      id: 28,
+      id: 29,
       name: r'tlValidationType',
       type: IsarType.string,
     ),
     r'tlValidatorId': PropertySchema(
-      id: 29,
+      id: 30,
       name: r'tlValidatorId',
       type: IsarType.string,
     ),
-    r'type': PropertySchema(id: 30, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 31, name: r'userId', type: IsarType.string),
+    r'type': PropertySchema(id: 31, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 32, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 32,
+      id: 33,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 33,
+      id: 34,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 34,
+      id: 35,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -241,36 +246,37 @@ void _reportSerialize(
   writer.writeBool(offsets[2], object.isDbSynced);
   writer.writeBool(offsets[3], object.isFullySynced);
   writer.writeBool(offsets[4], object.isPhotoSynced);
-  writer.writeBool(offsets[5], object.isRetryable);
-  writer.writeBool(offsets[6], object.isSynced);
-  writer.writeBool(offsets[7], object.isVoiceSynced);
-  writer.writeDouble(offsets[8], object.lat);
-  writer.writeDouble(offsets[9], object.lng);
-  writer.writeString(offsets[10], object.mobileId);
-  writer.writeString(offsets[11], object.ownerStatus);
-  writer.writeDateTime(offsets[12], object.ownerStatusAt);
-  writer.writeString(offsets[13], object.photoPath);
-  writer.writeString(offsets[14], object.photoStatus);
-  writer.writeString(offsets[15], object.photoUrl);
-  writer.writeString(offsets[16], object.problemCategory);
-  writer.writeString(offsets[17], object.status);
-  writer.writeString(offsets[18], object.supabaseId);
-  writer.writeStringList(offsets[19], object.timelineEvents);
-  writer.writeDateTime(offsets[20], object.timestamp);
-  writer.writeString(offsets[21], object.tlRejectionPhotoPath);
-  writer.writeString(offsets[22], object.tlRejectionPhotoUrl);
-  writer.writeString(offsets[23], object.tlRejectionVoicePath);
-  writer.writeString(offsets[24], object.tlRejectionVoiceUrl);
-  writer.writeDateTime(offsets[25], object.tlValidatedAt);
-  writer.writeString(offsets[26], object.tlValidationPhotoPath);
-  writer.writeString(offsets[27], object.tlValidationPhotoUrl);
-  writer.writeString(offsets[28], object.tlValidationType);
-  writer.writeString(offsets[29], object.tlValidatorId);
-  writer.writeString(offsets[30], object.type);
-  writer.writeString(offsets[31], object.userId);
-  writer.writeString(offsets[32], object.voicePath);
-  writer.writeString(offsets[33], object.voiceStatus);
-  writer.writeString(offsets[34], object.voiceUrl);
+  writer.writeBool(offsets[5], object.isReadByUser);
+  writer.writeBool(offsets[6], object.isRetryable);
+  writer.writeBool(offsets[7], object.isSynced);
+  writer.writeBool(offsets[8], object.isVoiceSynced);
+  writer.writeDouble(offsets[9], object.lat);
+  writer.writeDouble(offsets[10], object.lng);
+  writer.writeString(offsets[11], object.mobileId);
+  writer.writeString(offsets[12], object.ownerStatus);
+  writer.writeDateTime(offsets[13], object.ownerStatusAt);
+  writer.writeString(offsets[14], object.photoPath);
+  writer.writeString(offsets[15], object.photoStatus);
+  writer.writeString(offsets[16], object.photoUrl);
+  writer.writeString(offsets[17], object.problemCategory);
+  writer.writeString(offsets[18], object.status);
+  writer.writeString(offsets[19], object.supabaseId);
+  writer.writeStringList(offsets[20], object.timelineEvents);
+  writer.writeDateTime(offsets[21], object.timestamp);
+  writer.writeString(offsets[22], object.tlRejectionPhotoPath);
+  writer.writeString(offsets[23], object.tlRejectionPhotoUrl);
+  writer.writeString(offsets[24], object.tlRejectionVoicePath);
+  writer.writeString(offsets[25], object.tlRejectionVoiceUrl);
+  writer.writeDateTime(offsets[26], object.tlValidatedAt);
+  writer.writeString(offsets[27], object.tlValidationPhotoPath);
+  writer.writeString(offsets[28], object.tlValidationPhotoUrl);
+  writer.writeString(offsets[29], object.tlValidationType);
+  writer.writeString(offsets[30], object.tlValidatorId);
+  writer.writeString(offsets[31], object.type);
+  writer.writeString(offsets[32], object.userId);
+  writer.writeString(offsets[33], object.voicePath);
+  writer.writeString(offsets[34], object.voiceStatus);
+  writer.writeString(offsets[35], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -283,33 +289,34 @@ Report _reportDeserialize(
   object.activityLog = reader.readStringList(offsets[0]) ?? [];
   object.dbStatus = reader.readString(offsets[1]);
   object.id = id;
-  object.lat = reader.readDouble(offsets[8]);
-  object.lng = reader.readDouble(offsets[9]);
-  object.mobileId = reader.readString(offsets[10]);
-  object.ownerStatus = reader.readString(offsets[11]);
-  object.ownerStatusAt = reader.readDateTimeOrNull(offsets[12]);
-  object.photoPath = reader.readString(offsets[13]);
-  object.photoStatus = reader.readString(offsets[14]);
-  object.photoUrl = reader.readString(offsets[15]);
-  object.problemCategory = reader.readString(offsets[16]);
-  object.status = reader.readString(offsets[17]);
-  object.supabaseId = reader.readString(offsets[18]);
-  object.timelineEvents = reader.readStringList(offsets[19]) ?? [];
-  object.timestamp = reader.readDateTime(offsets[20]);
-  object.tlRejectionPhotoPath = reader.readString(offsets[21]);
-  object.tlRejectionPhotoUrl = reader.readString(offsets[22]);
-  object.tlRejectionVoicePath = reader.readString(offsets[23]);
-  object.tlRejectionVoiceUrl = reader.readString(offsets[24]);
-  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[25]);
-  object.tlValidationPhotoPath = reader.readString(offsets[26]);
-  object.tlValidationPhotoUrl = reader.readString(offsets[27]);
-  object.tlValidationType = reader.readString(offsets[28]);
-  object.tlValidatorId = reader.readString(offsets[29]);
-  object.type = reader.readString(offsets[30]);
-  object.userId = reader.readString(offsets[31]);
-  object.voicePath = reader.readString(offsets[32]);
-  object.voiceStatus = reader.readString(offsets[33]);
-  object.voiceUrl = reader.readString(offsets[34]);
+  object.isReadByUser = reader.readBool(offsets[5]);
+  object.lat = reader.readDouble(offsets[9]);
+  object.lng = reader.readDouble(offsets[10]);
+  object.mobileId = reader.readString(offsets[11]);
+  object.ownerStatus = reader.readString(offsets[12]);
+  object.ownerStatusAt = reader.readDateTimeOrNull(offsets[13]);
+  object.photoPath = reader.readString(offsets[14]);
+  object.photoStatus = reader.readString(offsets[15]);
+  object.photoUrl = reader.readString(offsets[16]);
+  object.problemCategory = reader.readString(offsets[17]);
+  object.status = reader.readString(offsets[18]);
+  object.supabaseId = reader.readString(offsets[19]);
+  object.timelineEvents = reader.readStringList(offsets[20]) ?? [];
+  object.timestamp = reader.readDateTime(offsets[21]);
+  object.tlRejectionPhotoPath = reader.readString(offsets[22]);
+  object.tlRejectionPhotoUrl = reader.readString(offsets[23]);
+  object.tlRejectionVoicePath = reader.readString(offsets[24]);
+  object.tlRejectionVoiceUrl = reader.readString(offsets[25]);
+  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[26]);
+  object.tlValidationPhotoPath = reader.readString(offsets[27]);
+  object.tlValidationPhotoUrl = reader.readString(offsets[28]);
+  object.tlValidationType = reader.readString(offsets[29]);
+  object.tlValidatorId = reader.readString(offsets[30]);
+  object.type = reader.readString(offsets[31]);
+  object.userId = reader.readString(offsets[32]);
+  object.voicePath = reader.readString(offsets[33]);
+  object.voiceStatus = reader.readString(offsets[34]);
+  object.voiceUrl = reader.readString(offsets[35]);
   return object;
 }
 
@@ -337,17 +344,17 @@ P _reportDeserializeProp<P>(
     case 7:
       return (reader.readBool(offset)) as P;
     case 8:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 9:
       return (reader.readDouble(offset)) as P;
     case 10:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 11:
       return (reader.readString(offset)) as P;
     case 12:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 13:
       return (reader.readString(offset)) as P;
+    case 13:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 14:
       return (reader.readString(offset)) as P;
     case 15:
@@ -359,11 +366,11 @@ P _reportDeserializeProp<P>(
     case 18:
       return (reader.readString(offset)) as P;
     case 19:
-      return (reader.readStringList(offset) ?? []) as P;
-    case 20:
-      return (reader.readDateTime(offset)) as P;
-    case 21:
       return (reader.readString(offset)) as P;
+    case 20:
+      return (reader.readStringList(offset) ?? []) as P;
+    case 21:
+      return (reader.readDateTime(offset)) as P;
     case 22:
       return (reader.readString(offset)) as P;
     case 23:
@@ -371,9 +378,9 @@ P _reportDeserializeProp<P>(
     case 24:
       return (reader.readString(offset)) as P;
     case 25:
-      return (reader.readDateTimeOrNull(offset)) as P;
-    case 26:
       return (reader.readString(offset)) as P;
+    case 26:
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 27:
       return (reader.readString(offset)) as P;
     case 28:
@@ -389,6 +396,8 @@ P _reportDeserializeProp<P>(
     case 33:
       return (reader.readString(offset)) as P;
     case 34:
+      return (reader.readString(offset)) as P;
+    case 35:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -912,6 +921,16 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.equalTo(property: r'isPhotoSynced', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> isReadByUserEqualTo(
+    bool value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isReadByUser', value: value),
       );
     });
   }
@@ -4608,6 +4627,18 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> sortByIsReadByUser() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReadByUser', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByIsReadByUserDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReadByUser', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByIsRetryable() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isRetryable', Sort.asc);
@@ -5018,6 +5049,18 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByIsReadByUser() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReadByUser', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByIsReadByUserDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isReadByUser', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByIsRetryable() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isRetryable', Sort.asc);
@@ -5400,6 +5443,12 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctByIsReadByUser() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isReadByUser');
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByIsRetryable() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isRetryable');
@@ -5684,6 +5733,12 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, bool, QQueryOperations> isPhotoSyncedProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isPhotoSynced');
+    });
+  }
+
+  QueryBuilder<Report, bool, QQueryOperations> isReadByUserProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isReadByUser');
     });
   }
 

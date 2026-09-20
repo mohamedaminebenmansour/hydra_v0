@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/report.dart';
 import '../services/database_service.dart';
 import '../widgets/report_detail_bottom_sheet.dart';
+import '../widgets/report_sheet_actions.dart';
 
 /// Full-screen offline-capable site map with clustering and TL verification
 /// filter.
@@ -24,13 +25,22 @@ import '../widgets/report_detail_bottom_sheet.dart';
 typedef SiteReportsStream = Stream<List<Report>> Function();
 
 class SiteMapScreen extends StatefulWidget {
-  const SiteMapScreen({super.key, this.reportsStream, this.tileProvider});
+  const SiteMapScreen({
+    super.key,
+    this.reportsStream,
+    this.tileProvider,
+    this.focusReport,
+  });
 
   /// Live Isar view of every report. Injectable for tests.
   final SiteReportsStream? reportsStream;
 
   /// Tile provider override (tests use a blank-pixel provider).
   final TileProvider? tileProvider;
+
+  /// When given, the map opens centered on this report's pin (zoom 16)
+  /// instead of framing every pin. Used by the report sheet's map button.
+  final Report? focusReport;
 
   @override
   State<SiteMapScreen> createState() => _SiteMapScreenState();
@@ -260,7 +270,7 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                   onMarkerTap: (marker) {
                     final report = reportByKey[marker.key];
                     if (report == null) return;
-                    showReportDetailSheet(context, report: report);
+                    showDefaultReportDetailSheet(context, report);
                   },
                   builder: (context, markers) {
                     final urgent = siteMapClusterNeedsAttention(markers, byPoint);
@@ -371,10 +381,21 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   }
 
   /// Frames every pin once on the first map-ready frame, so the user always
-  /// starts looking at their reports instead of a zoomed-in street.
+  /// starts looking at their reports instead of a zoomed-in street. When the
+  /// screen was opened with a [SiteMapScreen.focusReport], the map is instead
+  /// centered on that report's pin (zoom 16) — the sheet's map button lands
+  /// right on the report it came from.
   void _frameAllPinsOnce() {
     if (_framedOnce) return;
     _framedOnce = true;
+    final focus = widget.focusReport;
+    if (focus != null) {
+      final point = siteMapPointOf(focus);
+      if (point != null) {
+        _mapController.move(point, 16);
+        return;
+      }
+    }
     final points = [
       for (final report in _filteredReports) ?siteMapPointOf(report),
     ];

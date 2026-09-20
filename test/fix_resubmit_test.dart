@@ -67,13 +67,11 @@ void main() {
       WidgetTester tester,
       Report report, {
       required String role,
-      bool validationMode = false,
     }) async {
       await tester.pumpWidget(
         MaterialApp(
           home: ReportDetailScreen(
             report: report,
-            validationMode: validationMode,
             userRoleOverride: role,
           ),
         ),
@@ -82,25 +80,33 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('a rejected report shows the FIX & RESUBMIT bar for a '
-        'subcontractor', (tester) async {
+    testWidgets('a rejected report gives the subcontractor FIX & RESUBMIT', (
+      tester,
+    ) async {
       await pumpDetail(tester, rejectedReport(), role: 'subcontractor');
 
-      // The dispute card itself lives inside the Isar FutureBuilder body,
-      // which never resolves in the widget-test VM; the Scaffold-level
-      // action bar is assertable.
+      // One giant green camera button, labelled in full.
       expect(find.text('FIX & RESUBMIT'), findsOneWidget);
+      expect(find.byIcon(Icons.camera_alt), findsOneWidget);
+      expect(tester.widget<Icon>(find.byIcon(Icons.camera_alt)).size, 28);
+      expect(find.byTooltip('FIX & RESUBMIT'), findsNothing);
+      expect(find.text('APPROVE'), findsNothing);
+      expect(find.text('REMOTE'), findsNothing);
     });
 
-    testWidgets('no FIX & RESUBMIT bar for a Team Leader', (tester) async {
+    testWidgets('a Team Leader never gets the Fix & Resubmit bar', (
+      tester,
+    ) async {
       await pumpDetail(tester, rejectedReport(), role: 'team_leader');
 
+      // The report is already rejected (tlValidatedAt is set), so the TL has
+      // nothing left to decide and no fix button either.
       expect(find.text('FIX & RESUBMIT'), findsNothing);
-      // And the TL's gate buttons stay hidden outside validation mode.
-      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
+      expect(find.text('APPROVE'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
     });
 
-    testWidgets('no FIX & RESUBMIT bar when the report was not rejected', (
+    testWidgets('no Fix & Resubmit button when the report was not rejected', (
       tester,
     ) async {
       final clean = Report()
@@ -109,17 +115,18 @@ void main() {
       await pumpDetail(tester, clean, role: 'subcontractor');
 
       expect(find.text('FIX & RESUBMIT'), findsNothing);
+      expect(find.byIcon(Icons.camera_alt), findsNothing);
     });
 
-    testWidgets('a closed report shows the banner instead of any action', (
+    testWidgets('a closed report shows the banner and WORK CLOSED', (
       tester,
     ) async {
       final closed = rejectedReport()..ownerStatus = 'validated';
       await pumpDetail(tester, closed, role: 'subcontractor');
 
-      // The sheet's closed-stage banner replaced the legacy
-      // "Work Validated and Closed" strip.
+      // The header still states the stage, and the bar is disabled.
       expect(find.text('Approved by Owner'), findsOneWidget);
+      expect(find.text('WORK CLOSED'), findsOneWidget);
       expect(find.text('FIX & RESUBMIT'), findsNothing);
     });
 
@@ -130,18 +137,13 @@ void main() {
         ..type = 'work'
         ..timestamp = DateTime(2026, 9, 17)
         ..ownerStatus = 'validated';
-      await pumpDetail(
-        tester,
-        closed,
-        role: 'team_leader',
-        validationMode: true,
-      );
+      await pumpDetail(tester, closed, role: 'team_leader');
 
-      // The sheet's closed-stage banner replaces the legacy wording and
-      // suppresses every action button.
+      // The header states the closed stage and every action is suppressed.
       expect(find.text('Approved by Owner'), findsOneWidget);
-      expect(find.text('VALIDATE REMOTELY (Photo Only)'), findsNothing);
-      expect(find.text('REJECT & REQUEST FIX'), findsNothing);
+      expect(find.text('WORK CLOSED'), findsOneWidget);
+      expect(find.text('APPROVE'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
     });
   });
 
