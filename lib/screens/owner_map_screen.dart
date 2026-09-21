@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +17,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/sync_service.dart';
 import '../widgets/cluster_list_sheet.dart';
+import '../widgets/report_detail_bottom_sheet.dart';
+import '../widgets/report_sheet_actions.dart';
 import 'owner_action_sheet.dart';
 
 // ---------------------------------------------------------------------------
@@ -507,18 +510,25 @@ class _OwnerMapScreenState extends State<OwnerMapScreen> {
     ),
   );
 
-  /// Opens the decision sheet; when a decision was saved the reports are
-  /// re-fetched so the pin and cluster colors change immediately.
+  /// Opens the EXACT same shared report sheet as every other role: the full
+  /// Git-style timeline (sub photo -> TL rejection -> sub fix -> ...) with the
+  /// owner's giant decision bar injected as actions. When a decision was
+  /// saved the reports are re-fetched so the pin and cluster colors change
+  /// immediately.
   Future<void> _openReport(Map<String, dynamic> row) async {
-    final saved = await showOwnerActionSheet(
+    final report = ownerReportFromRow(row);
+    final changed = await showReportDetailSheet(
       context,
-      row: row,
-      writeDecision: widget.decisionWriter ?? _writeDecisionToSupabase,
+      report: report,
+      actions: ownerReportActions(
+        report: report,
+        writeDecision: widget.decisionWriter ?? _writeDecisionToSupabase,
+      ),
+      selfActor: 'owner',
     );
-    if (saved != true || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Report #${ownerLocalIdOf(row)} updated')),
-    );
+    if (changed != true || !mounted) return;
+    // The shared flow already confirms with its own 'Decision saved'
+    // snackbar — no second toast, just refresh the pins.
     await fetchReports();
   }
 
@@ -547,6 +557,39 @@ class _OwnerMapScreenState extends State<OwnerMapScreen> {
     debugPrint('OwnerCommand: report $localId -> owner_status=$ownerStatus');
   }
 
+  /// Releases the map controller so the camera listeners never leak.
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  /// Locate Me: fetches the current position (permission-checked, errors
+  /// swallowed) and centers the camera on it at street zoom.
+  Future<void> _locateMe() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      if (!mounted) return;
+      _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
+    } catch (e) {
+      debugPrint('OwnerCommand: locate me failed: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -573,6 +616,19 @@ class _OwnerMapScreenState extends State<OwnerMapScreen> {
           if (_error != null) _errorCard(),
           if (_error == null && !_loading && _rows.isEmpty) _emptyCard(),
           _filterPanel(),
+          // Locate Me: one thumb-sized button, bottom right, above the glass
+          // filter pill (which sits bottom center) — the two never overlap.
+          Positioned(
+            right: 16,
+            bottom: 104,
+            child: FloatingActionButton(
+              heroTag: 'owner_map_locate_me',
+              tooltip: 'Locate me',
+              backgroundColor: Colors.blue,
+              onPressed: _locateMe,
+              child: const Icon(Icons.my_location, color: Colors.white),
+            ),
+          ),
         ],
       ),
     );

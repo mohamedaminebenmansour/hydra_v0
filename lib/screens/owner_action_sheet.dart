@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/report.dart';
 import '../widgets/timeline_audio_player.dart';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,43 @@ DateTime? ownerTimestampOf(Map<String, dynamic> row) =>
       'rejected' => (Colors.red, 'TL Rejected'),
       _ => (Colors.amber.shade800, 'TL Not Verified Yet'),
     };
+
+/// Maps one Supabase `reports` row onto the local [Report] model, so the
+/// shared TrafficCard and report sheet (thumbnail, timeline, actions, TL
+/// badge) can render it. The owner is a thin client: nothing is written to
+/// Isar — this mapping exists purely for display.
+///
+/// The row's `local_id` is carried in `report.userId` — the owner flows key
+/// their Supabase writes on it. `tl_validated_at` is mapped too: the TL Visual
+/// Badge keys "Pending" off it, so leaving it null would mark verified reports
+/// as pending.
+Report ownerReportFromRow(Map<String, dynamic> row) {
+  final events = <String>[];
+  final rawEvents = row['timeline_events'];
+  if (rawEvents is List) {
+    for (final e in rawEvents) {
+      events.add(e.toString());
+    }
+  }
+  return Report()
+    ..userId = ownerLocalIdOf(row)
+    ..type = (row['type'] ?? 'work').toString()
+    ..timestamp = ownerTimestampOf(row) ?? DateTime.now()
+    ..photoUrl = (row['photo_url'] ?? '').toString()
+    ..voiceUrl = (row['voice_url'] ?? '').toString()
+    ..ownerStatus = ownerStatusOf(row)
+    ..ownerStatusAt = row['owner_status_at'] != null
+        ? DateTime.tryParse(row['owner_status_at'].toString())?.toLocal()
+        : null
+    ..tlValidatedAt = row['tl_validated_at'] != null
+        ? DateTime.tryParse(row['tl_validated_at'].toString())?.toLocal()
+        : null
+    ..tlValidationType = (row['tl_validation_type'] ?? '').toString()
+    ..tlValidationPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString()
+    ..tlRejectionPhotoUrl = (row['tl_rejection_photo_url'] ?? '').toString()
+    ..tlRejectionVoiceUrl = (row['tl_rejection_voice_url'] ?? '').toString()
+    ..timelineEvents = events;
+}
 
 /// The TL's rejection proof photo URL (falling back to the on-site validation
 /// photo), so the owner can see the evidence behind a rejection.

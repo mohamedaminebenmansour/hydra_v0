@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/report.dart';
+import '../role.dart';
 import '../services/database_service.dart';
 import '../widgets/cluster_list_sheet.dart';
 import '../widgets/report_detail_bottom_sheet.dart';
@@ -34,6 +35,7 @@ class SiteMapScreen extends StatefulWidget {
     this.reportsStream,
     this.tileProvider,
     this.focusReport,
+    this.initialOnlyPending,
   });
 
   /// Live Isar view of every report. Injectable for tests.
@@ -45,6 +47,11 @@ class SiteMapScreen extends StatefulWidget {
   /// When given, the map opens centered on this report's pin (zoom 16)
   /// instead of framing every pin. Used by the report sheet's map button.
   final Report? focusReport;
+
+  /// Initial state of the ⚠️ TO VERIFY filter. Null follows the signed-in
+  /// role: the Team Leader opens the map straight onto what needs HIS
+  /// attention; everyone else starts with ALL. Injectable for tests.
+  final bool? initialOnlyPending;
 
   @override
   State<SiteMapScreen> createState() => _SiteMapScreenState();
@@ -96,7 +103,7 @@ Map<String, List<Report>> indexReportsByPoint(List<Report> reports) {
 }
 
 /// True when any report behind these markers still waits for the Team Leader,
-/// i.e. when the cluster must be drawn RED instead of GREEN.
+/// i.e. when the cluster must be drawn YELLOW (attention) instead of GREEN.
 bool siteMapClusterNeedsAttention(
   List<Marker> markers,
   Map<String, List<Report>> byPoint,
@@ -112,6 +119,15 @@ bool siteMapClusterNeedsAttention(
 
 /// The build key of a report pin (tests and the sheet both address pins by it).
 Key siteMapPinKey(Report report) => ValueKey<String>('site_pin_${report.id}');
+
+/// The cluster bubble colour: YELLOW while any report inside still waits for
+/// the Team Leader's verification, GREEN once everything inside is verified.
+Color siteMapClusterColor(bool needsAttention) =>
+    needsAttention ? Colors.yellow : Colors.green;
+
+/// The cluster count text colour: dark on yellow for contrast, white on green.
+Color siteMapClusterTextColor(bool needsAttention) =>
+    needsAttention ? Colors.black87 : Colors.white;
 
 /// The reports behind a tapped cluster's child markers: deduplicated by
 /// marker key and sorted newest first, ready for the Cluster List popup.
@@ -145,11 +161,15 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   StreamSubscription<List<Report>>? _reportsSub;
   List<Report> _reports = [];
   CacheStore? _cacheStore;
-  bool showOnlyPending = false;
+  late bool showOnlyPending;
 
   @override
   void initState() {
     super.initState();
+    // The Team Leader opens the map straight onto what needs his immediate
+    // attention (⚠️ TO VERIFY); everyone else starts with ALL.
+    showOnlyPending =
+        widget.initialOnlyPending ?? (userRole == 'team_leader');
     _prepareCacheStore();
     _watchReports();
     _startLocationUpdates();
@@ -159,6 +179,7 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   void dispose() {
     _positionSub?.cancel();
     _reportsSub?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -225,6 +246,40 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
   List<Report> get _filteredReports {
     if (!showOnlyPending) return _reports;
     return _reports.where((r) => r.needsTlValidation).toList();
+  }
+
+  /// Locate Me: centers the camera on the user. Reuses the already-tracked
+  /// GPS position when available, otherwise fetches it once. Errors (no
+  /// service, denied permission, timeout) are swallowed — the map simply
+  /// stays where it is.
+  Future<void> _locateMe() async {
+    var target = _currentPosition;
+    if (target == null) {
+      try {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          return;
+        }
+        final pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+        target = LatLng(pos.latitude, pos.longitude);
+        if (!mounted) return;
+        setState(() => _currentPosition = target);
+      } catch (e) {
+        debugPrint('MapFlow: locate me failed: $e');
+        return;
+      }
+    }
+    if (!mounted) return;
+    _mapController.move(target, 17);
   }
 
   @override
@@ -302,7 +357,7 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                     final urgent = siteMapClusterNeedsAttention(markers, byPoint);
                     return Container(
                       decoration: BoxDecoration(
-                        color: urgent ? Colors.red : Colors.green,
+                        color: siteMapClusterColor(urgent),
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 3),
                         boxShadow: const [
@@ -316,8 +371,8 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                       child: Center(
                         child: Text(
                           markers.length.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: siteMapClusterTextColor(urgent),
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
                           ),
@@ -355,6 +410,19 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                 ],
               ),
             ],
+          ),
+          // Locate Me: one thumb-sized button, bottom right, above the
+          // ALL / ⚠️ TO VERIFY pill (which sits bottom center) — no overlap.
+          Positioned(
+            right: 16,
+            bottom: 80,
+            child: FloatingActionButton(
+              heroTag: 'site_map_locate_me',
+              tooltip: 'Locate me',
+              backgroundColor: Colors.blue,
+              onPressed: _locateMe,
+              child: const Icon(Icons.my_location, color: Colors.white),
+            ),
           ),
           Positioned(
             bottom: 20,

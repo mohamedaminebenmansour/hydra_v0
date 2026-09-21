@@ -223,6 +223,28 @@ void main() {
       );
     });
 
+    testWidgets('shows the blue Locate Me button clear of the filter pill', (
+      tester,
+    ) async {
+      await pumpScreen(tester, loader: () async => [reportRow(localId: '1')]);
+
+      final locate = find.byIcon(Icons.my_location);
+      expect(locate, findsOneWidget);
+
+      final fab = tester.widget<FloatingActionButton>(
+        find.ancestor(of: locate, matching: find.byType(FloatingActionButton)),
+      );
+      expect(fab.backgroundColor, Colors.blue);
+
+      // Bottom right, stacked fully ABOVE the bottom-center glass filter pill:
+      // the two can never overlap, whatever the screen height is.
+      final fabRect = tester.getRect(find.byType(FloatingActionButton));
+      final pillRect = tester.getRect(find.byType(ToggleButtons));
+      expect(fabRect.right, greaterThan(pillRect.right));
+      expect(fabRect.bottom, lessThanOrEqualTo(pillRect.top));
+    });
+
+
     testWidgets('shows the three filters and re-renders the pins on tap', (
       tester,
     ) async {
@@ -291,7 +313,8 @@ void main() {
       expect(decisions, [('1', 'validated')]);
       expect(find.text('VALIDATE'), findsNothing); // sheet closed
       expect(fetches, 2); // the map refreshed after the decision
-      expect(find.text('Report #1 updated'), findsOneWidget);
+      // The shared flow confirms with its own snackbar.
+      expect(find.text('Decision saved'), findsOneWidget);
     });
 
     testWidgets('tapping a cluster opens the Cluster List popup, newest first', (

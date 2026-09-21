@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../models/report.dart';
 import '../widgets/report_detail_bottom_sheet.dart';
 import '../widgets/report_sheet_actions.dart';
 import '../widgets/traffic_card.dart';
@@ -20,41 +19,8 @@ import 'owner_map_screen.dart';
 // Git-style timeline lives inside it.
 // ---------------------------------------------------------------------------
 
-/// Maps one Supabase `reports` row onto the local [Report] model, so the
-/// shared TrafficCard and report sheet (thumbnail, timeline, actions, TL
-/// badge) can render it.
-///
-/// The row's `local_id` is carried in `report.userId` - the owner flows key
-/// their Supabase writes on it, exactly like the map's decision sheet does.
-/// `tl_validated_at` is mapped too: the TL Visual Badge keys "Pending" off it,
-/// so leaving it null would mark verified reports as pending.
-Report ownerReportFromRow(Map<String, dynamic> row) {
-  final events = <String>[];
-  final rawEvents = row['timeline_events'];
-  if (rawEvents is List) {
-    for (final e in rawEvents) {
-      events.add(e.toString());
-    }
-  }
-  return Report()
-    ..userId = ownerLocalIdOf(row)
-    ..type = (row['type'] ?? 'work').toString()
-    ..timestamp = ownerTimestampOf(row) ?? DateTime.now()
-    ..photoUrl = (row['photo_url'] ?? '').toString()
-    ..voiceUrl = (row['voice_url'] ?? '').toString()
-    ..ownerStatus = ownerStatusOf(row)
-    ..ownerStatusAt = row['owner_status_at'] != null
-        ? DateTime.tryParse(row['owner_status_at'].toString())?.toLocal()
-        : null
-    ..tlValidatedAt = row['tl_validated_at'] != null
-        ? DateTime.tryParse(row['tl_validated_at'].toString())?.toLocal()
-        : null
-    ..tlValidationType = (row['tl_validation_type'] ?? '').toString()
-    ..tlValidationPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString()
-    ..tlRejectionPhotoUrl = (row['tl_rejection_photo_url'] ?? '').toString()
-    ..tlRejectionVoiceUrl = (row['tl_rejection_voice_url'] ?? '').toString()
-    ..timelineEvents = events;
-}
+// `ownerReportFromRow` lives in `owner_action_sheet.dart` with the other
+// raw-row helpers, so the map and this list always map a row identically.
 
 /// The Executive List's five filter chips, in display order. The MAP screen
 /// shares the [OwnerFilter] values but shows its own (shorter) labels, so

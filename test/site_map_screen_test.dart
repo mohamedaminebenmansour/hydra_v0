@@ -156,6 +156,16 @@ void main() {
         isFalse,
       );
     });
+
+    test('a cluster is YELLOW while it hides TL work, GREEN once verified', () {
+      // The Team Leader only reads one colour: yellow = "you have something to
+      // do here", green = "nothing left for you here".
+      expect(siteMapClusterColor(true), Colors.yellow);
+      expect(siteMapClusterColor(false), Colors.green);
+      // The count stays readable on both backgrounds.
+      expect(siteMapClusterTextColor(true), Colors.black87);
+      expect(siteMapClusterTextColor(false), Colors.white);
+    });
   });
 
   group('SiteMapScreen', () {
@@ -164,6 +174,7 @@ void main() {
     Future<void> pumpScreen(
       WidgetTester tester, {
       required StreamController<List<Report>> controller,
+      bool? initialOnlyPending,
     }) async {
       // The caller's data was buffered into the single-subscription
       // controller before the pump; it is delivered on listen (initState).
@@ -172,6 +183,7 @@ void main() {
           home: SiteMapScreen(
             reportsStream: () => controller.stream,
             tileProvider: _BlankTileProvider(),
+            initialOnlyPending: initialOnlyPending,
           ),
         ),
       );
@@ -293,5 +305,52 @@ void main() {
       expect(find.text('3 reports at this location'), findsNothing);
       expect(find.text('Pending TL Validation'), findsOneWidget);
     });
+
+    testWidgets('the Team Leader map opens straight on ⚠️ TO VERIFY', (
+      tester,
+    ) async {
+      final controller = StreamController<List<Report>>();
+      addTearDown(controller.close);
+      final validated = report(2)
+        ..tlValidatedAt = DateTime(2026, 9, 17, 10)
+        ..tlValidationType = 'physical';
+      await pumpScreen(
+        tester,
+        controller: controller..add([report(1), validated]),
+        initialOnlyPending: true,
+      );
+      // Let the framer run against the filtered pin set.
+      await tester.pump(const Duration(milliseconds: 200));
+      while (tester.takeException() != null) {}
+
+      // The pending pin is there, the verified one is filtered out — the TL
+      // never has to hunt for his work when the map opens.
+      expect(find.byKey(const ValueKey<String>('site_pin_1')), findsWidgets);
+      expect(find.byKey(const ValueKey<String>('site_pin_2')), findsNothing);
+    });
+
+    testWidgets('shows the blue Locate Me button clear of the filter pill', (
+      tester,
+    ) async {
+      final controller = StreamController<List<Report>>();
+      addTearDown(controller.close);
+      await pumpScreen(tester, controller: controller..add([report(1)]));
+
+      final locate = find.byIcon(Icons.my_location);
+      expect(locate, findsOneWidget);
+
+      final fab = tester.widget<FloatingActionButton>(
+        find.ancestor(of: locate, matching: find.byType(FloatingActionButton)),
+      );
+      expect(fab.backgroundColor, Colors.blue);
+
+      // Bottom right, stacked fully ABOVE the bottom-center filter pill: the
+      // two can never overlap, whatever the screen height is.
+      final fabRect = tester.getRect(find.byType(FloatingActionButton));
+      final pillRect = tester.getRect(find.byType(ToggleButtons));
+      expect(fabRect.right, greaterThan(pillRect.right));
+      expect(fabRect.bottom, lessThanOrEqualTo(pillRect.top));
+    });
+
   });
 }
