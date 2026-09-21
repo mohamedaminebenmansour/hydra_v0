@@ -4,24 +4,30 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/report.dart';
 import '../widgets/report_detail_bottom_sheet.dart';
 import '../widgets/report_sheet_actions.dart';
+import '../widgets/traffic_card.dart';
 import 'owner_action_sheet.dart';
 import 'owner_map_screen.dart';
 
 // ---------------------------------------------------------------------------
-// The Owner's reports list: every cloud row as one tappable card.
+// The Owner's Executive List: "Audit & Reports".
 //
 // Thin client, like the map: rows come straight from Supabase (injectable for
 // tests) and are mapped onto the local [Report] model ONLY so the shared
-// report sheet can render them - nothing is written to Isar. A tap opens the
-// sheet with the owner's giant decisions; the Git-style timeline lives inside
-// it.
+// TrafficCard / report sheet can render them - nothing is written to Isar.
+// Every card is grouped under its day (TODAY / YESTERDAY / long date), which
+// is what makes the list usable for auditing and payment preparation. A tap
+// opens the report detail sheet with the owner's giant decisions; the
+// Git-style timeline lives inside it.
 // ---------------------------------------------------------------------------
 
 /// Maps one Supabase `reports` row onto the local [Report] model, so the
-/// shared report sheet (thumbnail, timeline, actions) can render it.
+/// shared TrafficCard and report sheet (thumbnail, timeline, actions, TL
+/// badge) can render it.
 ///
 /// The row's `local_id` is carried in `report.userId` - the owner flows key
 /// their Supabase writes on it, exactly like the map's decision sheet does.
+/// `tl_validated_at` is mapped too: the TL Visual Badge keys "Pending" off it,
+/// so leaving it null would mark verified reports as pending.
 Report ownerReportFromRow(Map<String, dynamic> row) {
   final events = <String>[];
   final rawEvents = row['timeline_events'];
@@ -40,6 +46,9 @@ Report ownerReportFromRow(Map<String, dynamic> row) {
     ..ownerStatusAt = row['owner_status_at'] != null
         ? DateTime.tryParse(row['owner_status_at'].toString())?.toLocal()
         : null
+    ..tlValidatedAt = row['tl_validated_at'] != null
+        ? DateTime.tryParse(row['tl_validated_at'].toString())?.toLocal()
+        : null
     ..tlValidationType = (row['tl_validation_type'] ?? '').toString()
     ..tlValidationPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString()
     ..tlRejectionPhotoUrl = (row['tl_rejection_photo_url'] ?? '').toString()
@@ -47,7 +56,28 @@ Report ownerReportFromRow(Map<String, dynamic> row) {
     ..timelineEvents = events;
 }
 
-/// The Owner's scrollable list of every report in the cloud.
+/// The Executive List's five filter chips, in display order. The MAP screen
+/// shares the [OwnerFilter] values but shows its own (shorter) labels, so
+/// each surface keeps its own wording without breaking the other.
+const List<OwnerFilter> ownerListFilters = [
+  OwnerFilter.all,
+  OwnerFilter.myActions,
+  OwnerFilter.problems,
+  OwnerFilter.material,
+  OwnerFilter.rework,
+];
+
+/// Labels of the Executive List's filter chips (see [ownerListFilters]).
+const Map<OwnerFilter, String> ownerListFilterLabels = {
+  OwnerFilter.all: 'All',
+  OwnerFilter.myActions: '🔥 Pending My Action',
+  OwnerFilter.problems: '⚠️ Problems',
+  OwnerFilter.material: '📦 Material',
+  OwnerFilter.rework: '🔧 Rework',
+};
+
+/// The Owner's Executive List: every report in the cloud, grouped by day,
+/// with five audit filters — the payment-preparation counterpart to the map.
 class OwnerReportsListScreen extends StatefulWidget {
   const OwnerReportsListScreen({
     super.key,
@@ -166,7 +196,7 @@ class _OwnerReportsListScreenState extends State<OwnerReportsListScreen> {
         .toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reports List'),
+        title: const Text('Audit & Reports'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -177,18 +207,18 @@ class _OwnerReportsListScreenState extends State<OwnerReportsListScreen> {
       ),
       body: Column(
         children: [
-          // The filter chips.
+          // The Executive List's five audit filter chips.
           SizedBox(
             height: 48,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
-                for (final filter in OwnerFilter.values)
+                for (final filter in ownerListFilters)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(ownerFilterLabels[filter] ?? ''),
+                      label: Text(ownerListFilterLabels[filter] ?? ''),
                       selected: _filter == filter,
                       onSelected: (_) => setState(() => _filter = filter),
                     ),
@@ -227,7 +257,7 @@ class _OwnerReportsListScreenState extends State<OwnerReportsListScreen> {
     if (rows.isEmpty) {
       return Center(
         child: Text(
-          ownerFilterLabels[_filter] == 'ALL'
+          ownerListFilterLabels[_filter] == 'All'
               ? 'No reports yet.'
               : 'Nothing here for this filter.',
           style: const TextStyle(fontSize: 16, color: Colors.grey),
@@ -236,45 +266,65 @@ class _OwnerReportsListScreenState extends State<OwnerReportsListScreen> {
     }
     return RefreshIndicator(
       onRefresh: fetchReports,
-      child: ListView.separated(
-        itemCount: rows.length,
-        separatorBuilder: (_, _) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final row = rows[index];
-          final report = ownerReportFromRow(row);
-          final status = ownerStatusOf(row);
-          return ListTile(
-            leading: (row['photo_url'] ?? '').toString().isEmpty
-                ? const Icon(Icons.image_not_supported, size: 40)
-                : Image.network(
-                    (row['photo_url'] as String),
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Icons.broken_image, size: 40),
-                  ),
-            title: Text(
-              '${ownerTypeEmoji(report.type)} ${ownerTypeLabel(report.type)} '
-              '#${ownerLocalIdOf(row)}',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+      child: _buildGroupedList(rows),
+    );
+  }
+
+  /// The Executive List body: the (already newest-first) rows grouped under
+  /// day headers — 'TODAY', 'YESTERDAY', then long dates — and flattened into
+  /// one [ListView.builder] of header items and [TrafficCard] items. Each card
+  /// carries the TL Visual Badge (On Site vs Remote vs Rejected) and the
+  /// owner-status colouring; a tap opens the report detail sheet.
+  Widget _buildGroupedList(List<Map<String, dynamic>> rows) {
+    // Group by day, preserving the newest-first order within each group.
+    final headers = <String>[];
+    final byDay = <String, List<Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final ts = ownerTimestampOf(row);
+      // Rows without a parsable timestamp cannot be dated; bucket them under
+      // a trailing 'UNDATED' header instead of dropping them.
+      final label = ts == null ? 'UNDATED' : dayGroupLabel(ts);
+      if (!byDay.containsKey(label)) {
+        byDay[label] = <Map<String, dynamic>>[];
+        headers.add(label);
+      }
+      byDay[label]!.add(row);
+    }
+
+    // Flatten into header + card entries for a single scrollable list.
+    final entries = <Widget>[];
+    for (final label in headers) {
+      entries.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 12, left: 12, right: 12),
+          child: Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+              color: Colors.deepPurple,
             ),
-            subtitle: Text(
-              '${ownerStatusWord(status)} - '
-              '${ownerTlBadgeFor(report.tlValidationType).$2}',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            trailing: Icon(
-              ownerStatusBadgeFor(status).$1,
-              color: ownerStatusBorderColor(status),
-            ),
+          ),
+        ),
+      );
+      for (final row in byDay[label]!) {
+        final report = ownerReportFromRow(row);
+        entries.add(
+          TrafficCard(
+            key: ValueKey('owner_list_card_${ownerLocalIdOf(row)}'),
+            report: report,
+            showUnreadDot: false,
             onTap: () => _openReport(row),
-          );
-        },
-      ),
+          ),
+        );
+      }
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 8),
+      itemCount: entries.length,
+      itemBuilder: (context, index) => entries[index],
     );
   }
 }

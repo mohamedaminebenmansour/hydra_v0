@@ -30,9 +30,10 @@ import 'owner_action_sheet.dart';
 /// the whole `reports` table with the Supabase client initialized in `main()`.
 typedef OwnerReportsLoader = Future<List<Map<String, dynamic>>> Function();
 
-/// The filters of the owner tools: three on the floating map panel, plus
-/// PROBLEMS on the reports list.
-enum OwnerFilter { all, myActions, tlVerified, problems }
+/// The filters of the owner tools: three on the floating map panel, five on
+/// the Executive List ('Audit & Reports'), which adds MATERIAL and REWORK
+/// (the TL-rejected reports the owner audits for payment disputes).
+enum OwnerFilter { all, myActions, tlVerified, problems, material, rework }
 
 /// Labels of the filter buttons, in panel order (one glance, no jargon).
 const Map<OwnerFilter, String> ownerFilterLabels = {
@@ -78,7 +79,9 @@ bool ownerRowIsPending(Map<String, dynamic> row) =>
 /// True when [row] belongs to the selected [filter]:
 ///  * MY ACTIONS  -> only reports still waiting for the owner;
 ///  * TL VERIFIED -> only reports the Team Leader verified (on site / remote);
-///  * PROBLEMS    -> only problem-type reports (the reports list).
+///  * PROBLEMS    -> only problem-type reports (the reports list);
+///  * MATERIAL    -> only material-type reports (payment preparation);
+///  * REWORK      -> only the TL-rejected reports (the dispute queue).
 bool ownerRowMatchesFilter(Map<String, dynamic> row, OwnerFilter filter) =>
     switch (filter) {
       OwnerFilter.all => true,
@@ -88,6 +91,9 @@ bool ownerRowMatchesFilter(Map<String, dynamic> row, OwnerFilter filter) =>
         'remote',
       }.contains((row['tl_validation_type'] ?? '').toString()),
       OwnerFilter.problems => (row['type'] ?? '').toString() == 'problem',
+      OwnerFilter.material => (row['type'] ?? '').toString() == 'material',
+      OwnerFilter.rework =>
+        (row['tl_validation_type'] ?? '').toString() == 'rejected',
     };
 
 /// The rows the map should show for [filter].

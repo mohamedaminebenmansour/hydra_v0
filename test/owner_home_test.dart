@@ -30,6 +30,7 @@ Map<String, dynamic> reportRow({
   String type = 'work',
   String ownerStatus = 'pending',
   String tlValidationType = '',
+  String? tlValidatedAt,
   double lat = 36.8,
   double lng = 10.1,
   String timestamp = '2026-09-18T09:30:00Z',
@@ -38,6 +39,7 @@ Map<String, dynamic> reportRow({
   'type': type,
   'owner_status': ownerStatus,
   'tl_validation_type': tlValidationType,
+  'tl_validated_at': tlValidatedAt,
   'photo_url': '',
   'voice_url': '',
   'lat': lat,
@@ -108,6 +110,26 @@ void main() {
         reportRow(localId: '2', ownerStatus: 'validated'),
       ];
       expect(filterOwnerReports(rows, OwnerFilter.all).length, 2);
+    });
+
+    test('MATERIAL keeps only the material reports', () {
+      final rows = [
+        reportRow(localId: '1', type: 'material'),
+        reportRow(localId: '2', type: 'work'),
+        reportRow(localId: '3', type: 'problem'),
+      ];
+      final filtered = filterOwnerReports(rows, OwnerFilter.material);
+      expect(filtered.map((row) => row['local_id']), ['1']);
+    });
+
+    test('REWORK keeps only the TL-rejected reports', () {
+      final rows = [
+        reportRow(localId: '1', tlValidationType: 'rejected'),
+        reportRow(localId: '2', tlValidationType: 'physical'),
+        reportRow(localId: '3'),
+      ];
+      final filtered = filterOwnerReports(rows, OwnerFilter.rework);
+      expect(filtered.map((row) => row['local_id']), ['1']);
     });
 
     test('pins are built per filtered report and keyed by local_id', () {
@@ -295,6 +317,121 @@ void main() {
         find.text('No reports yet.\nTap the big refresh button.'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('OwnerReportsListScreen (Audit & Reports)', () {
+    /// Pumps the Executive List with an injected loader (no Supabase, no Isar).
+    Future<void> pumpListScreen(
+      WidgetTester tester,
+      List<Map<String, dynamic>> rows,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnerReportsListScreen(reportsLoader: () async => rows),
+        ),
+      );
+      // Two pumps settle the loader future and the refresh of the state.
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('shows the Audit & Reports chrome and the five filter chips', (
+      tester,
+    ) async {
+      await pumpListScreen(tester, []);
+
+      expect(find.text('Audit & Reports'), findsOneWidget);
+      expect(find.text('All'), findsOneWidget);
+      expect(find.text('🔥 Pending My Action'), findsOneWidget);
+      expect(find.text('⚠️ Problems'), findsOneWidget);
+      expect(find.text('📦 Material'), findsOneWidget);
+      expect(find.text('🔧 Rework'), findsOneWidget);
+      expect(find.text('No reports yet.'), findsOneWidget);
+    });
+
+    testWidgets('groups cards under day headers with the TL badge on each', (
+      tester,
+    ) async {
+      final now = DateTime.now().toIso8601String();
+      await pumpListScreen(tester, [
+        reportRow(
+          localId: '1',
+          tlValidationType: 'physical',
+          tlValidatedAt: now,
+          timestamp: now,
+        ),
+        reportRow(
+          localId: '2',
+          tlValidationType: 'remote',
+          tlValidatedAt: '2026-09-14T11:00:00Z',
+          timestamp: '2026-09-14T09:30:00Z',
+        ),
+      ]);
+
+      expect(find.text('TODAY'), findsOneWidget);
+      // 'MONDAY, 14 SEPTEMBER' — matched loosely so locale tweaks survive.
+      expect(find.textContaining('14 SEPTEMBER'), findsOneWidget);
+      // The TL Visual Badges, straight off the row's validation type.
+      expect(find.text('TL: On Site'), findsOneWidget);
+      expect(find.text('TL: Remote'), findsOneWidget);
+      expect(find.byIcon(Icons.verified), findsOneWidget);
+      expect(find.byIcon(Icons.visibility), findsOneWidget);
+      // The owner's thin-client cards never show the unread dot.
+      expect(find.byKey(const Key('history_unread_dot')), findsNothing);
+    });
+
+    testWidgets('a tap on the card opens the report detail sheet', (
+      tester,
+    ) async {
+      int loaderCalls = 0;
+      Future<List<Map<String, dynamic>>> loader() async {
+        loaderCalls++;
+        return [
+          reportRow(
+            localId: '7',
+            tlValidationType: 'physical',
+            tlValidatedAt: '2026-09-14T10:00:00Z',
+          ),
+        ];
+      }
+      await tester.pumpWidget(
+        MaterialApp(
+          home: OwnerReportsListScreen(reportsLoader: loader),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.verified));
+      // Two pumps: the modal entrance animation and its settle frame.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // The detail sheet opened with the TL badge next to the timestamp. The
+      // card underneath the modal barrier shows the same label, so at-least-one.
+      expect(find.text('TL: On Site'), findsWidgets);
+      // The sheet's own (owner) timeline is empty on open.
+      expect(find.text('No events yet.'), findsOneWidget);
+
+      // Close the sheet via the header close button (the giant REJECT button
+      // below it uses the same glyph, hence `.first`). The list re-fetches
+      // whether or not a decision was saved (the loader is called again).
+      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(loaderCalls, 2);
+    });
+
+    testWidgets('a filter with no rows shows its own empty hint', (
+      tester,
+    ) async {
+      await pumpListScreen(tester, [reportRow(localId: '1')]);
+
+      await tester.tap(find.text('📦 Material'));
+      await tester.pump();
+
+      expect(find.text('Nothing here for this filter.'), findsOneWidget);
     });
   });
 
