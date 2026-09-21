@@ -9,6 +9,7 @@ import '../services/database_service.dart';
 import 'report_stage.dart';
 import 'report_thumbnail.dart';
 import 'report_timeline.dart';
+import 'tl_validation_badge.dart';
 
 // The report-stage vocabulary ([ReportStage], [reportStageOf],
 // [reportStageStyle], [reportActionLabel], [reportTypeEmoji]) lives in
@@ -342,7 +343,8 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
             ),
           ),
           const SizedBox(width: 12),
-          // Report type, then the full timestamp, then the validation badge.
+          // Report type, then the full timestamp with the TL validation chip
+          // beside it, then the stage badge.
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,9 +359,20 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  when,
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                // Date/Time with the TL badge beside it so the verdict is the
+                // first thing seen on opening the report. Expanded + ellipsis
+                // keep the row from ever pixel-overflowing.
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        when,
+                        style: const TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(flex: 0, child: TlValidationBadge(report: _report)),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Container(

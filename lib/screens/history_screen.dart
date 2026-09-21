@@ -6,6 +6,7 @@ import '../role.dart';
 import '../services/database_service.dart';
 import '../widgets/report_thumbnail.dart';
 import '../widgets/report_sheet_actions.dart';
+import '../widgets/tl_validation_badge.dart';
 
 /// Short, locale-friendly label for an optional timestamp, e.g. '9 Sep, 10:00'.
 /// Returns '' for null so tracker nodes can omit the time column.
@@ -14,14 +15,13 @@ String historyTimeLabel(DateTime? time) {
   return DateFormat('d MMM, HH:mm').format(time.toLocal());
 }
 
-/// TL gate verdict as a (color, label, timestamp) tuple for the tracker.
-(Color, String, DateTime?) historyTlNode(Report report) {
-  final ts = report.tlValidatedAt;
-  return switch (report.tlValidationType) {
-    'rejected' => (Colors.red, 'TL: Rejected', ts),
-    'physical' || 'remote' => (Colors.green, 'TL: Verified', ts),
-    _ => (Colors.yellow, 'TL: Pending', null),
-  };
+/// TL gate verdict as a (color, icon, label, timestamp) tuple for the tracker.
+/// The badge vocabulary (colour + icon + wording) is defined once in
+/// [tlValidationBadgeStyle] so the History card and the report detail header
+/// always agree.
+(Color, IconData, String, DateTime?) historyTlNode(Report report) {
+  final (color, icon, label) = tlValidationBadgeStyle(report);
+  return (color, icon, label, report.tlValidatedAt);
 }
 
 /// Whether the TL verdict surfaces a dispute bubble on the tracker node.
@@ -176,12 +176,14 @@ class _HistoryScreenState extends State<HistoryScreen>
     _ => Colors.yellow,
   };
 
-  /// Tiny colored dot used as the leading icon of the TL/Owner tracker nodes.
-  Widget _dot(Color color) => Container(
-    width: 10,
-    height: 10,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
+  /// Icon matching each owner status for the tracker's leading glyph —
+  /// a replacement for the old anonymous colored dot.
+  IconData _ownerNodeIcon(String ownerStatus) => switch (ownerStatus) {
+    'validated' || 'acknowledged' => Icons.verified,
+    'ordered' => Icons.shopping_cart,
+    'rejected' => Icons.close,
+    _ => Icons.hourglass_top,
+  };
 
   /// One tracker node: a fixed 18x18 leading icon/dot + small label + optional
   /// timestamp + optional dispute bubble.
@@ -201,15 +203,17 @@ class _HistoryScreenState extends State<HistoryScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
               if (timeText.isNotEmpty) ...[
                 const SizedBox(width: 4),
@@ -249,20 +253,23 @@ class _HistoryScreenState extends State<HistoryScreen>
         label: 'Submitted',
         time: report.timestamp,
       ),
-      // Node 2: Team Leader gate - hidden for the Team Leader.
+      // Node 2: Team Leader gate - the verdict is a Visual Badge (icon +
+      // colour) so Physical vs Remote is readable without reading text.
       if (!_isTeamLeader)
         _timelineNode(
-          leading: _dot(tl.$1),
-          label: tl.$2,
-          time: tl.$3,
+          leading: Icon(tl.$2, size: 16, color: tl.$1),
+          label: tl.$3,
+          time: tl.$4,
           showDisputeBubble: historyTlHasDispute(report),
         ),
-      // Node 3: Owner decision - visible to all roles.
+      // Node 3: Owner decision - visible to all roles. The tiny colored dot
+      // is replaced by a matching Material icon in the owner-status colour,
+      // consistent with the TL badge above it.
       Builder(
         builder: (_) {
           final owner = historyOwnerNode(report);
           return _timelineNode(
-            leading: _dot(owner.$1),
+            leading: Icon(_ownerNodeIcon(report.ownerStatus), size: 16, color: owner.$1),
             label: owner.$2,
             time: owner.$3,
           );

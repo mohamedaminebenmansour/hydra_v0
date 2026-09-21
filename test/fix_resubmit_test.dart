@@ -179,7 +179,7 @@ void main() {
       expect(find.text('Waiting'), findsOneWidget); // owner: pending
     });
 
-    testWidgets('a verified report shows TL: Verified in green context', (
+    testWidgets('a physically verified report shows TL: On Site', (
       tester,
     ) async {
       final r = rejectedReport()
@@ -187,7 +187,19 @@ void main() {
         ..ownerStatus = 'pending';
       await pumpHistory(tester, [r], role: 'subcontractor');
 
-      expect(find.text('TL: Verified'), findsOneWidget);
+      expect(find.text('TL: On Site'), findsOneWidget);
+      // The Visual Badge: the verified icon, not the old anonymous dot.
+      expect(find.byIcon(Icons.verified), findsOneWidget);
+    });
+
+    testWidgets('a remotely verified report shows TL: Remote', (tester) async {
+      final r = rejectedReport()
+        ..tlValidationType = 'remote'
+        ..ownerStatus = 'pending';
+      await pumpHistory(tester, [r], role: 'subcontractor');
+
+      expect(find.text('TL: Remote'), findsOneWidget);
+      expect(find.byIcon(Icons.visibility), findsOneWidget);
     });
 
     testWidgets('a Team Leader sees only the owner chip', (tester) async {
