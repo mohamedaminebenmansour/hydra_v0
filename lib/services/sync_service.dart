@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/report.dart';
 import 'database_service.dart';
+import 'event_media.dart';
 import 'report_merge.dart';
 
 /// Uploads locally pending reports (photos, voice notes) to Supabase and
@@ -237,32 +238,48 @@ class SyncService {
         }
       }
 
-      // 3c) Timeline events: upload any local media paths inside timelineEvents
-      // and rewrite them with their public URLs so the detail UI can stream
-      // them after the local files are reclaimed.
+      // 3c) Timeline events: upload the local file behind each event's media and
+      // record the public URL beside it (the path + URL pair), so the detail UI
+      // can stream it after the local file is reclaimed. The event is written
+      // back through normalizeEventMedia, which keeps a live local path and
+      // drops one whose file is already gone — a reclaimed capture is never
+      // resurrected, and its cloud URL is never lost.
       if (report.timelineEvents.isNotEmpty) {
         var timelineChanged = false;
         final updated = <String>[];
         for (final raw in report.timelineEvents) {
           try {
-            final event = Map<String, dynamic>.from(jsonDecode(raw));
-            var photoUrl = (event['photoUrl'] ?? '').toString();
-            var voiceUrl = (event['voiceUrl'] ?? '').toString();
-            if (photoUrl.isNotEmpty &&
-                !photoUrl.startsWith('http') &&
-                await File(photoUrl).exists()) {
-              final url = await _upload('photo', photoUrl, 'image/jpeg');
-              event['photoUrl'] = url;
-              timelineChanged = true;
+            final event = decodeEvent(raw);
+            if (event == null) {
+              updated.add(raw);
+              continue;
             }
-            if (voiceUrl.isNotEmpty &&
-                !voiceUrl.startsWith('http') &&
-                await File(voiceUrl).exists()) {
-              final url = await _upload('voice', voiceUrl, 'audio/mp4');
-              event['voiceUrl'] = url;
-              timelineChanged = true;
+            var uploaded = false;
+            final photo = eventPhotoOf(event);
+            if (hostedUrl(photo.url) == null &&
+                photo.path.isNotEmpty &&
+                await File(photo.path).exists()) {
+              event['photoUrl'] = await _upload(
+                'photo',
+                photo.path,
+                'image/jpeg',
+              );
+              uploaded = true;
             }
-            updated.add(jsonEncode(event));
+            final voice = eventVoiceOf(event);
+            if (hostedUrl(voice.url) == null &&
+                voice.path.isNotEmpty &&
+                await File(voice.path).exists()) {
+              event['voiceUrl'] = await _upload(
+                'voice',
+                voice.path,
+                'audio/mp4',
+              );
+              uploaded = true;
+            }
+            final encoded = jsonEncode(normalizeEventMedia(event));
+            if (uploaded || encoded != raw) timelineChanged = true;
+            updated.add(encoded);
           } catch (e) {
             debugPrint('SyncFlow: timeline event upload failed: $e');
             updated.add(raw);
@@ -315,30 +332,34 @@ class SyncService {
         'tl_validated_at': report.tlValidatedAt!.toUtc().toIso8601String(),
       if (allowClear || report.tlValidationType.isNotEmpty)
         'tl_validation_type': report.tlValidationType,
-      if (report.tlValidationPhotoUrl.isNotEmpty)
-        'tl_validation_photo_url': report.tlValidationPhotoUrl,
-      if (report.tlRejectionPhotoUrl.isNotEmpty)
-        'tl_rejection_photo_url': report.tlRejectionPhotoUrl,
-      if (report.tlRejectionVoiceUrl.isNotEmpty)
-        'tl_rejection_voice_url': report.tlRejectionVoiceUrl,
+      ...urlOnlyField('tl_validation_photo_url', report.tlValidationPhotoUrl),
+      ...urlOnlyField('tl_rejection_photo_url', report.tlRejectionPhotoUrl),
+      ...urlOnlyField('tl_rejection_voice_url', report.tlRejectionVoiceUrl),
     };
   }
+
+  /// The two thread columns of the push payload, with every event reduced to
+  /// what may live in the cloud: real URLs only — never a local path, never an
+  /// empty string — so a push can only ever add information.
+  static Map<String, dynamic> _threadPayload(Report report) => {
+    'activity_log': jsonEncode(cloudEventList(report.activityLog)),
+    'timeline_events': cloudEventList(report.timelineEvents),
+  };
 
   /// Inserts (or upserts when supabaseId exists) the metadata row.
   static Future<void> _insertRow(Report report) async {
     final payload = <String, dynamic>{
       'local_id': report.id.toString(),
       'type': report.type,
-      'photo_url': report.photoUrl,
-      'voice_url': report.voiceUrl,
+      ...urlOnlyField('photo_url', report.photoUrl),
+      ...urlOnlyField('voice_url', report.voiceUrl),
       'problem_category': report.problemCategory,
       'lat': report.lat,
       'lng': report.lng,
       'timestamp': report.timestamp.toUtc().toIso8601String(),
       'user_id': report.userId,
       'mobile_id': report.mobileId,
-      'activity_log': jsonEncode(report.activityLog),
-      'timeline_events': report.timelineEvents,
+      ..._threadPayload(report),
       ..._tlValidationPayload(report),
     };
     final inserted = report.supabaseId.isNotEmpty
@@ -369,12 +390,14 @@ class SyncService {
     // were locally mutated (gate decision or resubmission), so:
     //  * allowClear: a resubmitted report legitimately clears its gate state
     //    (tl_validation_type -> '') so it returns to the TL's inbox;
-    //  * photo_url: the subcontractor may have re-captured the proof photo;
-    //  * activity_log: the shared audit trail ("Fix & Resubmit" loop).
+    //  * photo_url: the subcontractor may have re-captured the proof photo —
+    //    sent only when it really is a cloud URL, so a blank local value can
+    //    never wipe the remote copy (see `urlOnlyField`);
+    //  * the two threads: the shared audit trail ("Fix & Resubmit" loop), pushed
+    //    with cloud URLs only.
     final payload = _tlValidationPayload(report, allowClear: true)
-      ..['photo_url'] = report.photoUrl
-      ..['activity_log'] = jsonEncode(report.activityLog)
-      ..['timeline_events'] = report.timelineEvents;
+      ..addAll(urlOnlyField('photo_url', report.photoUrl))
+      ..addAll(_threadPayload(report));
     if (payload.isEmpty) return;
     final updated = await Supabase.instance.client
         .from('reports')

@@ -192,8 +192,8 @@ Future<bool> tlRejectFlow(BuildContext context, Report report) async {
     report.addTimelineEvent(
       actor: 'tl',
       action: 'reject',
-      photoUrl: proofPath,
-      voiceUrl: voicePath,
+      photoPath: proofPath,
+      voicePath: voicePath,
     );
     report.tlValidatorId = tlValidatorIdOf(report);
     report.tlValidationType = 'rejected';
@@ -241,11 +241,18 @@ Future<bool> subFixAndResubmitFlow(BuildContext context, Report report) async {
 
     final oldPhotoPath = report.photoPath;
     final oldVoicePath = report.voicePath;
+    // The before-picture (and voice note) move into the thread. Both the local
+    // file AND the cloud copy are carried over: after the 7-day "Hybrid Shield"
+    // cleanup the file is gone while the URL is still valid, and dropping it
+    // here is what used to make the original evidence unrecoverable once the
+    // resubmit replaced the report's own photo.
     report.addTimelineEvent(
       actor: 'sub',
       action: 'resubmit',
-      photoUrl: oldPhotoPath,
-      voiceUrl: oldVoicePath,
+      photoPath: oldPhotoPath,
+      photoUrl: report.photoUrl,
+      voicePath: oldVoicePath,
+      voiceUrl: report.voiceUrl,
     );
     report
       ..photoPath = captured.photoPath

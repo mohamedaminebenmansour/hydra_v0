@@ -221,6 +221,37 @@ void main() {
         'https://cdn/submit.jpg',
       );
     });
+
+    test('a reclaimed path is dropped and the cloud URL adopted (pair shape)', () {
+      // The event carries the new (path + url) pair, but the file has been
+      // reclaimed: the URL must be adopted and the dead path must NOT come back.
+      final local = Report()..timestamp = _t0;
+      local.addTimelineEvent(
+        actor: 'sub',
+        action: 'submit',
+        photoPath: '/tmp/reclaimed/photo.jpg',
+        time: _t0,
+      );
+
+      final merged = mergeRemoteReport(local, {
+        'timeline_events': [
+          {
+            'actor': 'sub',
+            'action': 'submit',
+            'text': '',
+            'photoPath': '/tmp/reclaimed/photo.jpg',
+            'photoUrl': 'https://cdn/submit.jpg',
+            'voiceUrl': '',
+            'time': _t0.toUtc().toIso8601String(),
+          },
+        ],
+      });
+
+      expect(merged, isTrue);
+      final event = local.parseTimelineEvents().single;
+      expect(event['photoUrl'], 'https://cdn/submit.jpg');
+      expect(event['photoPath'], ''); // gone for good, never resurrected
+    });
   });
 
   group('Team Leader gate', () {

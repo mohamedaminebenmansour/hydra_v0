@@ -488,8 +488,8 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..addTimelineEvent(
           actor: 'sub',
           action: 'submit',
-          photoUrl: widget.photoPath,
-          voiceUrl: currentVoicePath ?? '',
+          photoPath: widget.photoPath,
+          voicePath: currentVoicePath ?? '',
         );
       final savedId = await ReportLocalService.saveReport(report);
       debugPrint('SaveFlow: report persisted with Isar id=$savedId');

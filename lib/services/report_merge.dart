@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../models/report.dart';
+import 'event_media.dart';
 
 /// Union-only merge of a remote Supabase row into a local [Report].
 ///
@@ -133,10 +134,12 @@ void _mergeTlGate(Report local, Map<String, dynamic> remote, _Changes changes) {
 /// Unions a local event list with its remote counterpart.
 ///
 /// Both sides are decoded to maps, deduped by actor+action+time+text, and
-/// re-encoded oldest first. For an event present on both sides the local media
-/// is kept while the file still exists on disk, otherwise the cloud URL is
-/// adopted — so a pull can never delete a capture that has not been uploaded
-/// yet, and never lose the URL once the file has been reclaimed.
+/// re-encoded oldest first. For an event present on both sides the media is
+/// merged pair by pair (see [_mergeEventMedia]): a local file that still exists
+/// is kept for offline display, the cloud URL is adopted when the local one is
+/// missing, and a path whose file has been reclaimed is never resurrected — so
+/// a pull can never delete a capture that has not been uploaded yet, and never
+/// lose the URL once the file has been reclaimed.
 List<String> _mergeEventList(List<String> localRaw, dynamic remoteRaw) {
   final merged = <String, Map<String, dynamic>>{};
   for (final raw in localRaw) {
@@ -151,12 +154,7 @@ List<String> _mergeEventList(List<String> localRaw, dynamic remoteRaw) {
       merged[key] = entry;
       continue;
     }
-    for (final field in const ['photoUrl', 'voiceUrl']) {
-      final current = (existing[field] ?? '').toString();
-      final remoteValue = (entry[field] ?? '').toString();
-      final chosen = _preferLocalMedia(current, remoteValue);
-      if (chosen != current) existing[field] = chosen;
-    }
+    _mergeEventMedia(existing, entry);
   }
   final out = merged.values.toList()
     ..sort((a, b) {
@@ -221,12 +219,38 @@ DateTime _eventTime(Map<String, dynamic> entry) {
   return _parseDate(entry['time']) ?? DateTime.fromMillisecondsSinceEpoch(0);
 }
 
-/// Keeps [localValue] while it still points at a file on this device, otherwise
-/// takes the remote (cloud URL) value.
-String _preferLocalMedia(String localValue, String remoteValue) {
-  if (localValue.isNotEmpty && _isExistingFile(localValue)) return localValue;
-  if (remoteValue.isNotEmpty) return remoteValue;
-  return localValue;
+/// Merges one event's media from the cloud into the local copy, pair by pair:
+/// the local file wins while it really exists (offline-first), the cloud URL is
+/// adopted whenever the local one is missing, and a local path whose file has
+/// been reclaimed is dropped instead of being resurrected — so a pull can never
+/// put a dead path back into the record (and never into the cloud on the next
+/// push).
+void _mergeEventMedia(
+  Map<String, dynamic> existing,
+  Map<String, dynamic> remote,
+) {
+  for (final pair in const [
+    ('photoPath', 'photoUrl'),
+    ('voicePath', 'voiceUrl'),
+  ]) {
+    final rawUrl = (existing[pair.$2] ?? '').toString();
+    final remoteUrl = hostedUrl(eventMediaOf(remote, pair.$1, pair.$2).url);
+
+    // The URL field keeps the historical rule: a value that is a live local
+    // file is this device's working copy and wins, anything else gives way to
+    // the cloud URL. An empty field stays untouched when the cloud has nothing
+    // to offer — nothing is ever blanked out here.
+    final localWins = rawUrl.isNotEmpty && _isExistingFile(rawUrl);
+    if (!localWins && remoteUrl != null && remoteUrl != rawUrl) {
+      existing[pair.$2] = remoteUrl;
+    }
+
+    // A path whose file has been reclaimed is dropped, never resurrected.
+    final rawPath = (existing[pair.$1] ?? '').toString();
+    if (rawPath.isNotEmpty && !_isExistingFile(rawPath)) {
+      existing.remove(pair.$1);
+    }
+  }
 }
 
 /// Synchronous, never-throwing existence probe: a URL in a path field, an empty

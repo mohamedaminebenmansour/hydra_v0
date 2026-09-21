@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/report.dart';
+import '../services/event_media.dart';
 import '../services/report_local_service.dart';
 import 'report_stage.dart';
 
@@ -146,9 +147,13 @@ class _GitCommitRow extends StatelessWidget {
     final text = (event['text'] ?? '').toString();
     final when = DateTime.tryParse((event['time'] ?? '').toString())?.toLocal();
 
+    // The bubble media is a (path, url) pair: the local file while it exists,
+    // the cloud copy once it has been reclaimed — and for events written by
+    // older builds, the single legacy field, which both accessors understand.
+    final eventPhoto = eventPhotoOf(event);
     final media = ReportLocalService.resolveMedia(
-      (event['photoUrl'] ?? '').toString(),
-      '',
+      eventPhoto.path,
+      eventPhoto.url,
     );
     final hasPhoto = media.origin != MediaOrigin.none;
     final nodeColor = gitActorColor(actor);
@@ -295,32 +300,40 @@ class _GitCommitRow extends StatelessWidget {
 /// 'submit' event at all, and a 'submit' event may carry no photo; both cases
 /// are repaired here so the first thing anyone reads is what was reported.
 List<Map<String, dynamic>> _threadEvents(Report report) {
-  final photo = report.photoPath.isNotEmpty
-      ? report.photoPath
-      : report.photoUrl;
+  // The report's own media is the (path, url) pair, so the opening bubble can
+  // still be shown after the local file is reclaimed.
+  final hasReportMedia =
+      report.photoPath.isNotEmpty ||
+      hostedUrl(report.photoUrl) != null ||
+      report.voicePath.isNotEmpty ||
+      hostedUrl(report.voiceUrl) != null;
   final events = report.parseTimelineEvents();
   if (events.isEmpty) {
-    if (photo.isEmpty && report.voicePath.isEmpty) return const [];
-    return [_submitEvent(report, photo)];
+    if (!hasReportMedia) return const [];
+    return [_submitEvent(report)];
   }
+  final firstPhoto = eventPhotoOf(events.first);
   final firstHasPhoto =
       ReportLocalService.resolveMedia(
-        (events.first['photoUrl'] ?? '').toString(),
-        '',
+        firstPhoto.path,
+        firstPhoto.url,
       ).origin !=
       MediaOrigin.none;
-  if (firstHasPhoto || photo.isEmpty) return events;
-  return [_submitEvent(report, photo), ...events];
+  if (firstHasPhoto || !hasReportMedia) return events;
+  return [_submitEvent(report), ...events];
 }
 
 /// The synthetic 'submit' bubble used when the stored thread is missing its
-/// opening event: the report's own photo (and voice note) at creation time.
-Map<String, dynamic> _submitEvent(Report report, String photo) => {
+/// opening event: the report's own photo (and voice note) at creation time,
+/// local file and cloud copy alike.
+Map<String, dynamic> _submitEvent(Report report) => {
   'actor': 'sub',
   'action': 'submit',
   'text': '',
-  'photoUrl': photo,
-  'voiceUrl': report.voicePath,
+  'photoPath': report.photoPath,
+  'photoUrl': report.photoUrl,
+  'voicePath': report.voicePath,
+  'voiceUrl': report.voiceUrl,
   'time': report.timestamp.toUtc().toIso8601String(),
 };
 
@@ -359,13 +372,15 @@ class _ChatBubble extends StatelessWidget {
         ? Colors.red
         : (isSub ? Colors.blueGrey.shade800 : Colors.blue.shade800);
 
+    final eventPhoto = eventPhotoOf(event);
+    final eventVoice = eventVoiceOf(event);
     final media = ReportLocalService.resolveMedia(
-      (event['photoUrl'] ?? '').toString(),
-      '',
+      eventPhoto.path,
+      eventPhoto.url,
     );
     final voice = ReportLocalService.resolveMedia(
-      (event['voiceUrl'] ?? '').toString(),
-      '',
+      eventVoice.path,
+      eventVoice.url,
     );
     final hasPhoto = media.origin != MediaOrigin.none;
     final hasVoice = voice.origin != MediaOrigin.none;

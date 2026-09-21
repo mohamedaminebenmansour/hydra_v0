@@ -113,20 +113,25 @@ class Report {
 
   /// Append-only audit trail of the report's life ("Fix & Resubmit" loop).
   /// Each entry is a flat JSON string:
-  /// `{"actor":"tl|sub|owner","action":"...","photoUrl":"...","voiceUrl":"...",
-  ///   "time":"ISO-8601"}`. Kept as raw strings so it maps 1:1 to the Supabase
-  /// `activity_log JSONB` column without extra models.
+  /// `{"actor":"tl|sub|owner","action":"...","photoPath":"...","voicePath":"...",
+  ///   "photoUrl":"...","voiceUrl":"...","time":"ISO-8601"}`. Kept as raw
+  /// strings so it maps 1:1 to the Supabase `activity_log JSONB` column without
+  /// extra models. The `*Path` fields are the local proof files (dropped once
+  /// the file is reclaimed), the `*Url` fields their cloud copies — see
+  /// `services/event_media.dart`, the single place both are interpreted.
   List<String> activityLog = [];
 
   /// Append-only event log for the Detail Screen timeline. Each entry is a
   /// flat JSON string:
   /// `{"actor":"sub|tl","action":"submit|resubmit|reject|comment|...",
-  ///   "text":"why it was rejected / how it was fixed","photoUrl":"...",
-  ///   "voiceUrl":"...","time":"ISO-8601"}`. Never overwritten: every new
-  /// action appends, so the full dispute history — and the Sub/TL chat thread
-  /// built on top of it — is preserved.
+  ///   "text":"why it was rejected / how it was fixed","photoPath":"...",
+  ///   "voicePath":"...","photoUrl":"...","voiceUrl":"...","time":"ISO-8601"}`.
+  /// Never overwritten: every new action appends, so the full dispute history —
+  /// and the Sub/TL chat thread built on top of it — is preserved.
   ///
-  /// [text] is optional and absent on events written by older builds.
+  /// [text] is optional and absent on events written by older builds; those
+  /// carry their media in `photoUrl` / `voiceUrl` alone (a local path or a cloud
+  /// URL), which `eventPhotoOf` / `eventVoiceOf` still resolve.
   List<String> timelineEvents = [];
 
   /// Read receipt for the History card's unread indicator (WhatsApp-style
@@ -149,11 +154,14 @@ class Report {
   bool get isTlRejected => tlValidationType == 'rejected';
 
   /// Appends one entry to [activityLog] (see its doc comment for the format).
-  /// [time] defaults to now; [photoUrl] / [voiceUrl] attach the proof media
-  /// belonging to the action, when there is any.
+  /// [time] defaults to now; [photoPath] / [voicePath] record the local proof
+  /// files and [photoUrl] / [voiceUrl] their cloud copies, so the thread still
+  /// works offline and still has an image once the local file is reclaimed.
   void logActivity({
     required String actor,
     required String action,
+    String photoPath = '',
+    String voicePath = '',
     String photoUrl = '',
     String voiceUrl = '',
     DateTime? time,
@@ -161,6 +169,8 @@ class Report {
     final entry = jsonEncode({
       'actor': actor,
       'action': action,
+      'photoPath': photoPath,
+      'voicePath': voicePath,
       'photoUrl': photoUrl,
       'voiceUrl': voiceUrl,
       'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
@@ -179,6 +189,8 @@ class Report {
     required String actor,
     required String action,
     String text = '',
+    String photoPath = '',
+    String voicePath = '',
     String photoUrl = '',
     String voiceUrl = '',
     DateTime? time,
@@ -187,6 +199,8 @@ class Report {
       'actor': actor,
       'action': action,
       'text': text,
+      'photoPath': photoPath,
+      'voicePath': voicePath,
       'photoUrl': photoUrl,
       'voiceUrl': voiceUrl,
       'time': (time ?? DateTime.now()).toUtc().toIso8601String(),
@@ -204,8 +218,11 @@ class Report {
   /// throwing — a thread must never crash the report sheet.
   ///
   /// Every entry is normalised so the UI can read `actor`, `action`, `text`,
-  /// `photoUrl`, `voiceUrl` and `time` without null checks; `text` is `''` for
-  /// events written before the chat existed.
+  /// `photoPath`, `photoUrl`, `voicePath`, `voiceUrl` and `time` without null
+  /// checks; `text` is `''` for events written before the chat existed, and the
+  /// path fields are `''` for events written before the pair existed (their
+  /// single media field — a local path or a cloud URL — is read through
+  /// `eventPhotoOf` / `eventVoiceOf`, which understand both shapes).
   List<Map<String, dynamic>> parseTimelineEvents() {
     final entries = <Map<String, dynamic>>[];
     for (final raw in timelineEvents) {
@@ -216,6 +233,8 @@ class Report {
             'actor': (decoded['actor'] ?? '').toString(),
             'action': (decoded['action'] ?? '').toString(),
             'text': (decoded['text'] ?? '').toString(),
+            'photoPath': (decoded['photoPath'] ?? '').toString(),
+            'voicePath': (decoded['voicePath'] ?? '').toString(),
             'photoUrl': (decoded['photoUrl'] ?? '').toString(),
             'voiceUrl': (decoded['voiceUrl'] ?? '').toString(),
             'time': (decoded['time'] ?? '').toString(),

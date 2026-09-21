@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -131,6 +132,90 @@ void main() {
       final m = ReportLocalService.resolveMedia('', '');
       expect(m.origin, MediaOrigin.none);
       expect(m.location, '');
+    });
+  });
+
+  group('releaseThreadMedia ("Hybrid Shield" for the thread)', () {
+    late Directory dir;
+    late File photo;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('hydra_thread_cleanup');
+      photo = File('${dir.path}/photo.jpg')..writeAsStringSync('jpeg');
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('releases a captured file once its cloud URL exists', () async {
+      final report = Report()..timestamp = DateTime.now();
+      report.addTimelineEvent(
+        actor: 'sub',
+        action: 'submit',
+        photoPath: photo.path,
+        photoUrl: 'https://cdn/submit.jpg',
+      );
+
+      final result = await ReportLocalService.releaseThreadMedia(report);
+
+      expect(result.deleted, 1);
+      expect(result.changed, isTrue);
+      expect(photo.existsSync(), isFalse); // disk reclaimed
+      final event =
+          jsonDecode(report.timelineEvents.single) as Map<String, dynamic>;
+      expect(event['photoUrl'], 'https://cdn/submit.jpg'); // evidence intact
+      expect(event.containsKey('photoPath'), isFalse); // no dead path left
+    });
+
+    test('keeps the file while the cloud copy is missing', () async {
+      final report = Report()..timestamp = DateTime.now();
+      report.addTimelineEvent(
+        actor: 'sub',
+        action: 'submit',
+        photoPath: photo.path,
+      );
+
+      final result = await ReportLocalService.releaseThreadMedia(report);
+
+      expect(result.deleted, 0);
+      expect(result.changed, isFalse);
+      expect(photo.existsSync(), isTrue);
+      final event =
+          jsonDecode(report.timelineEvents.single) as Map<String, dynamic>;
+      expect(event['photoPath'], photo.path);
+    });
+
+    test('the audit trail is reclaimed too, and a rerun is a no-op', () async {
+      final report = Report()..timestamp = DateTime.now();
+      report.logActivity(
+        actor: 'tl',
+        action: 'rejected',
+        photoPath: photo.path,
+        photoUrl: 'https://cdn/reject.jpg',
+      );
+
+      final first = await ReportLocalService.releaseThreadMedia(report);
+      expect(first.deleted, 1);
+      expect(photo.existsSync(), isFalse);
+      expect(
+        (jsonDecode(report.activityLog.single) as Map<String, dynamic>)[
+            'photoUrl'],
+        'https://cdn/reject.jpg',
+      );
+
+      final second = await ReportLocalService.releaseThreadMedia(report);
+      expect(second.deleted, 0);
+      expect(second.changed, isFalse);
+    });
+
+    test('a malformed entry is left untouched', () async {
+      final report = Report()
+        ..timestamp = DateTime.now()
+        ..timelineEvents = ['not-json'];
+
+      final result = await ReportLocalService.releaseThreadMedia(report);
+
+      expect(result.deleted, 0);
+      expect(result.changed, isFalse);
+      expect(report.timelineEvents.single, 'not-json');
     });
   });
 }

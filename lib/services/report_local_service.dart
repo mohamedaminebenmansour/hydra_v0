@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/report.dart';
 import 'database_service.dart';
+import 'event_media.dart';
 
 /// Where a report's photo / voice media should be read from right now.
 enum MediaOrigin { localFile, network, none }
@@ -116,7 +118,10 @@ class ReportLocalService {
   /// URL must be present before a file is released, and every single deletion
   /// is guarded — a missing file, or a path that is really a URL, is harmless.
   /// The Isar record keeps `photoUrl` / `voiceUrl` and only loses the local
-  /// paths. Returns the number of reports whose paths were cleared.
+  /// paths. The report's thread is reclaimed under the exact same rule, so the
+  /// reject / resubmit captures (which live inside the event JSON) stop filling
+  /// the disk while every cloud URL is preserved. Returns the number of reports
+  /// whose paths were cleared.
   static Future<int> cleanUpLocalMedia({
     Duration olderThan = const Duration(days: 7),
   }) async {
@@ -141,6 +146,9 @@ class ReportLocalService {
           report.voicePath = '';
           changed = true;
         }
+        final thread = await releaseThreadMedia(report);
+        filesDeleted += thread.deleted;
+        changed = changed || thread.changed;
         if (changed) {
           await DatabaseService.clearLocalMediaPaths(report);
           reportsCleaned++;
@@ -156,6 +164,46 @@ class ReportLocalService {
       debugPrint('CleanupFlow: local media cleanup failed: $e\n$st');
       return 0;
     }
+  }
+
+  /// "Hybrid Shield" for the thread: deletes the local file behind every
+  /// timeline / audit event whose cloud copy already exists, then drops the
+  /// now-dead path from the stored JSON through `normalizeEventMedia` — which
+  /// keeps the URL, so the bubble keeps rendering from the cloud.
+  ///
+  /// An event with no URL keeps its file: the cloud copy must exist before the
+  /// local one is let go. Returns how many files were deleted and whether the
+  /// report's stored events changed. Called by [cleanUpLocalMedia] for every
+  /// candidate; public so the rule can be exercised without a database.
+  static Future<({int deleted, bool changed})> releaseThreadMedia(
+    Report report,
+  ) async {
+    var deleted = 0;
+    var changed = false;
+
+    Future<List<String>> release(List<String> entries) async {
+      final out = <String>[];
+      for (final raw in entries) {
+        final event = decodeEvent(raw);
+        if (event == null) {
+          // Undecodable entries are left exactly as they were.
+          out.add(raw);
+          continue;
+        }
+        for (final media in [eventPhotoOf(event), eventVoiceOf(event)]) {
+          if (media.path.isEmpty || media.url.isEmpty) continue;
+          if (await _deleteMediaQuietly(media.path)) deleted++;
+        }
+        final encoded = jsonEncode(normalizeEventMedia(event));
+        if (encoded != raw) changed = true;
+        out.add(encoded);
+      }
+      return out;
+    }
+
+    report.timelineEvents = await release(report.timelineEvents);
+    report.activityLog = await release(report.activityLog);
+    return (deleted: deleted, changed: changed);
   }
 
   /// Deletes [path] when it exists. Returns true only when a file was actually
