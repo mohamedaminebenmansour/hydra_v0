@@ -10,9 +10,12 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/sync_service.dart';
+import '../widgets/cluster_list_sheet.dart';
 import 'owner_action_sheet.dart';
 
 // ---------------------------------------------------------------------------
@@ -209,6 +212,29 @@ List<Marker> buildOwnerMarkers(
   return markers;
 }
 
+/// The rows behind a tapped cluster's child markers: resolved through the
+/// coordinate index (one lookup per marker, like a single-pin tap),
+/// deduplicated, and sorted newest first for the Cluster List popup.
+List<Map<String, dynamic>> ownerClusterRows(
+  List<Marker> markers,
+  Map<String, List<Map<String, dynamic>>> byPoint,
+) {
+  final seen = <Map<String, dynamic>>{};
+  final rows = <Map<String, dynamic>>[];
+  for (final marker in markers) {
+    for (final row in byPoint[ownerPointKey(marker.point)] ?? const []) {
+      if (seen.add(row)) rows.add(row);
+    }
+  }
+  rows.sort((a, b) {
+    final at = ownerTimestampOf(a);
+    final bt = ownerTimestampOf(b);
+    if (at == null || bt == null) return 0;
+    return bt.compareTo(at);
+  });
+  return rows;
+}
+
 /// The Owner's home: "Site Command".
 ///
 /// A full-screen map of every report in the cloud, cluster-colored by owner
@@ -380,6 +406,107 @@ class _OwnerMapScreenState extends State<OwnerMapScreen> {
     unawaited(_openReport(rows.first));
   }
 
+  /// Cluster tap: never zoom — several reports can share the exact same
+  /// coordinates, so zooming would never separate them. Collect the rows
+  /// behind the bubble (newest first) and show the Cluster List popup; a
+  /// lonely row (defensive: clusters hold >= 2 pins) opens directly.
+  Future<void> _onClusterTap(List<Marker> markers) async {
+    final rows = ownerClusterRows(markers, _byPoint);
+    if (rows.isEmpty) return;
+    if (rows.length == 1) {
+      await _openReport(rows.single);
+      return;
+    }
+    await showClusterListSheet<Map<String, dynamic>>(
+      context,
+      title: '${rows.length} reports at this location',
+      items: rows,
+      tileBuilder: (context, row) => _clusterTile(context, row),
+      onItemTap: (row) => _openReport(row),
+    );
+  }
+
+  /// One Cluster List row: the 50x50 photo (owner-status border), the type
+  /// emoji, the timestamp and the TL/Owner status badges. Tapping closes the
+  /// popup and opens the decision sheet.
+  Widget _clusterTile(BuildContext context, Map<String, dynamic> row) {
+    final type = (row['type'] ?? 'work').toString();
+    final timestamp = ownerTimestampOf(row);
+    final (tlColor, tlLabel) = ownerTlBadgeFor(
+      (row['tl_validation_type'] ?? '').toString(),
+    );
+    final status = ownerStatusOf(row);
+    final photoUrl = (row['photo_url'] ?? '').toString();
+    return ListTile(
+      onTap: () => openClusterListItem(context, () => _openReport(row)),
+      leading: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: ownerStatusBorderColor(status),
+            width: 2,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: photoUrl.isEmpty
+            ? const Icon(Icons.image_not_supported, size: 22)
+            : CachedNetworkImage(
+                imageUrl: photoUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) =>
+                    const Icon(Icons.photo_camera, size: 22),
+                errorWidget: (context, url, error) =>
+                    const Icon(Icons.broken_image, size: 22),
+              ),
+      ),
+      title: Row(
+        children: [
+          Text(ownerTypeEmoji(type), style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              timestamp == null
+                  ? '—'
+                  : DateFormat('d MMM, HH:mm').format(timestamp),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _miniStatusChip(tlLabel, tlColor),
+          _miniStatusChip(ownerStatusWord(status), ownerStatusBorderColor(status)),
+        ],
+      ),
+      trailing: const Icon(Icons.chevron_right),
+    );
+  }
+
+  /// The tiny status pill used for the TL and Owner badges on cluster tiles.
+  Widget _miniStatusChip(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+        color: color,
+      ),
+    ),
+  );
+
   /// Opens the decision sheet; when a decision was saved the reports are
   /// re-fetched so the pin and cluster colors change immediately.
   Future<void> _openReport(Map<String, dynamic> row) async {
@@ -487,10 +614,15 @@ class _OwnerMapScreenState extends State<OwnerMapScreen> {
           options: MarkerClusterLayerOptions(
             maxClusterRadius: 45,
             size: const Size(ownerClusterSize, ownerClusterSize),
-            zoomToBoundsOnClick: true,
+            // A cluster tap does NOT zoom (several reports can share the exact
+            // same coordinates, so zooming would never separate them). The
+            // tap is handled manually: the Cluster List popup lists every
+            // report behind the bubble, newest first.
+            zoomToBoundsOnClick: false,
             spiderfyCluster: false,
             markers: _markers,
             onMarkerTap: _onMarkerTap,
+            onClusterTap: (cluster) => _onClusterTap(cluster.mapMarkers),
             builder: (context, markers) => _clusterBubble(markers),
           ),
         ),

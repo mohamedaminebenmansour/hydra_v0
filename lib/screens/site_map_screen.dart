@@ -13,8 +13,12 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/report.dart';
 import '../services/database_service.dart';
+import '../widgets/cluster_list_sheet.dart';
 import '../widgets/report_detail_bottom_sheet.dart';
 import '../widgets/report_sheet_actions.dart';
+import '../widgets/report_thumbnail.dart';
+import '../widgets/traffic_card.dart';
+import '../widgets/tl_validation_badge.dart';
 
 /// Full-screen offline-capable site map with clustering and TL verification
 /// filter.
@@ -108,6 +112,24 @@ bool siteMapClusterNeedsAttention(
 
 /// The build key of a report pin (tests and the sheet both address pins by it).
 Key siteMapPinKey(Report report) => ValueKey<String>('site_pin_${report.id}');
+
+/// The reports behind a tapped cluster's child markers: deduplicated by
+/// marker key and sorted newest first, ready for the Cluster List popup.
+List<Report> siteMapClusterReports(
+  List<Marker> markers,
+  Map<Key, Report> reportByKey,
+) {
+  final seen = <Key>{};
+  final reports = <Report>[];
+  for (final marker in markers) {
+    final key = marker.key;
+    if (key == null || !seen.add(key)) continue;
+    final report = reportByKey[key];
+    if (report != null) reports.add(report);
+  }
+  reports.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  return reports;
+}
 
 class _SiteMapScreenState extends State<SiteMapScreen> {
   static const double _pinSize = 40;
@@ -259,10 +281,14 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
                 options: MarkerClusterLayerOptions(
                   maxClusterRadius: 50,
                   size: const Size(46, 46),
-                  // A cluster tap zooms to its bounds (the plugin's own
-                  // animation) — that is the whole point of clustering.
-                  zoomToBoundsOnClick: true,
+                  // A cluster tap does NOT zoom (several reports can share the
+                  // exact same coordinates, so zooming would never separate
+                  // them). The tap is handled manually: the Cluster List popup
+                  // lists every report behind the bubble, newest first.
+                  zoomToBoundsOnClick: false,
                   spiderfyCluster: false,
+                  onClusterTap: (cluster) =>
+                      _openClusterList(cluster.mapMarkers, reportByKey),
                   // Taps are handled by the cluster layer itself: a child
                   // GestureDetector never fires when the marker is drawn
                   // inside a cluster, so this is the only reliable hook.
@@ -407,6 +433,95 @@ class _SiteMapScreenState extends State<SiteMapScreen> {
       ),
     );
   }
+
+  /// Cluster tap: never zoom — several reports can share the exact same
+  /// coordinates, so zooming would never separate them. Collect the reports
+  /// behind the bubble (newest first) and show the Cluster List popup; a
+  /// lonely report (defensive: clusters hold >= 2 pins) opens directly.
+  Future<void> _openClusterList(
+    List<Marker> markers,
+    Map<Key, Report> reportByKey,
+  ) async {
+    final reports = siteMapClusterReports(markers, reportByKey);
+    if (reports.isEmpty) return;
+    if (reports.length == 1) {
+      await showDefaultReportDetailSheet(context, reports.single);
+      return;
+    }
+    await showClusterListSheet<Report>(
+      context,
+      title: '${reports.length} reports at this location',
+      items: reports,
+      tileBuilder: (context, report) => _clusterTile(context, report),
+      onItemTap: (report) async {
+        await showDefaultReportDetailSheet(context, report);
+      },
+    );
+  }
+
+  /// One Cluster List row: the 50x50 photo, the type icon, the timestamp and
+  /// the TL/Owner badges. Tapping closes the popup and opens the full report.
+  Widget _clusterTile(BuildContext context, Report report) {
+    final (ownerColor, ownerLabel, _) = trafficOwnerNode(report);
+    return ListTile(
+      onTap: () => openClusterListItem(context, () async {
+        await showDefaultReportDetailSheet(context, report);
+      }),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 50,
+          height: 50,
+          child: ReportThumbnail(report: report, size: 50),
+        ),
+      ),
+      title: Row(
+        children: [
+          Icon(
+            trafficTypeIcon(report.type),
+            size: 16,
+            color: trafficTypeColor(report.type),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              trackerTimeLabel(report.timestamp),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TlValidationBadge(report: report, iconSize: 12, fontSize: 10),
+          _miniStatusChip(ownerLabel, ownerColor),
+        ],
+      ),
+      trailing: const Icon(Icons.chevron_right),
+    );
+  }
+
+  /// The tiny owner-status pill shown next to the TL badge on cluster tiles.
+  Widget _miniStatusChip(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+        color: color,
+      ),
+    ),
+  );
 
   Widget _buildReportPin(Report report) {
     final color = siteMapPinColor(report);

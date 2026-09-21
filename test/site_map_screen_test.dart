@@ -94,6 +94,31 @@ void main() {
       );
     });
 
+    test('siteMapClusterReports dedupes by pin key and sorts newest first', () {
+      final a = report(1)..timestamp = DateTime(2026, 9, 17, 9);
+      final b = report(2)..timestamp = DateTime(2026, 9, 17, 10);
+      final c = report(3)..timestamp = DateTime(2026, 9, 17, 11);
+      final reportByKey = {
+        siteMapPinKey(a): a,
+        siteMapPinKey(b): b,
+        siteMapPinKey(c): c,
+      };
+      Marker pin(Report r) => Marker(
+        key: siteMapPinKey(r),
+        point: const LatLng(36.8, 10.1),
+        width: 40,
+        height: 40,
+        child: const SizedBox(),
+      );
+      // b appears twice (a repeated child) and must be listed once; the
+      // result is newest first regardless of the marker order.
+      final reports = siteMapClusterReports(
+        [pin(b), pin(c), pin(a), pin(b)],
+        reportByKey,
+      );
+      expect(reports.map((r) => r.id), [3, 2, 1]);
+    });
+
     test('a cluster needs attention while any report inside waits for the TL', () {
       final pending = report(1);
       final validated = report(2)
@@ -219,6 +244,53 @@ void main() {
       while (tester.takeException() != null) {}
 
       // The sheet is the Step 1 sheet: the photo header + status + composer.
+      expect(find.text('Pending TL Validation'), findsOneWidget);
+    });
+
+    testWidgets('tapping a cluster opens the Cluster List popup, newest first', (
+      tester,
+    ) async {
+      final controller = StreamController<List<Report>>();
+      addTearDown(controller.close);
+      // Three reports at the exact same coordinates: they must collapse into
+      // one cluster whose tap NEVER zooms, but lists them instead.
+      await pumpScreen(
+        tester,
+        controller: controller..add([
+          report(1)..timestamp = DateTime(2026, 9, 17, 9),
+          report(2)..timestamp = DateTime(2026, 9, 17, 10),
+          report(3)..timestamp = DateTime(2026, 9, 17, 11),
+        ]),
+      );
+      // Let the cluster plugin's initial camera animation finish.
+      await tester.pump(const Duration(milliseconds: 600));
+      while (tester.takeException() != null) {}
+
+      // The cluster bubble shows the count — tap it.
+      await tester.tap(find.text('3'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      while (tester.takeException() != null) {}
+
+      // The Cluster List popup: 50% height, one tile per report.
+      expect(find.text('3 reports at this location'), findsOneWidget);
+      expect(find.text('17 Sep, 11:00'), findsOneWidget);
+      expect(find.text('17 Sep, 10:00'), findsOneWidget);
+      expect(find.text('17 Sep, 09:00'), findsOneWidget);
+      // Newest first: 11:00 above 10:00 above 09:00.
+      final newestY = tester.getTopLeft(find.text('17 Sep, 11:00')).dy;
+      final middleY = tester.getTopLeft(find.text('17 Sep, 10:00')).dy;
+      final oldestY = tester.getTopLeft(find.text('17 Sep, 09:00')).dy;
+      expect(newestY, lessThan(middleY));
+      expect(middleY, lessThan(oldestY));
+
+      // Tapping a tile closes the popup and opens the full report chat.
+      await tester.tap(find.text('17 Sep, 11:00'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      while (tester.takeException() != null) {}
+
+      expect(find.text('3 reports at this location'), findsNothing);
       expect(find.text('Pending TL Validation'), findsOneWidget);
     });
   });

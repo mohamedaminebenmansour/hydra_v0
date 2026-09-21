@@ -294,6 +294,71 @@ void main() {
       expect(find.text('Report #1 updated'), findsOneWidget);
     });
 
+    testWidgets('tapping a cluster opens the Cluster List popup, newest first', (
+      tester,
+    ) async {
+      var fetches = 0;
+      await pumpScreen(
+        tester,
+        loader: () async {
+          fetches++;
+          // Three rows at the exact same coordinates: one cluster whose tap
+          // must NEVER zoom, but list the reports instead.
+          return [
+            reportRow(
+              localId: '1',
+              timestamp: '2026-09-18T09:00:00',
+              lat: 36.80,
+              lng: 10.10,
+            ),
+            reportRow(
+              localId: '2',
+              timestamp: '2026-09-18T10:00:00',
+              lat: 36.80,
+              lng: 10.10,
+            ),
+            reportRow(
+              localId: '3',
+              timestamp: '2026-09-18T11:00:00',
+              lat: 36.80,
+              lng: 10.10,
+            ),
+          ];
+        },
+      );
+
+      // Let the cluster plugin's initial camera animation finish.
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.tap(find.text('3'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The Cluster List popup: one tile per report, newest first. The
+      // timestamps carry no timezone suffix, so the rendered clock is exact.
+      expect(find.text('3 reports at this location'), findsOneWidget);
+      expect(find.text('18 Sep, 11:00'), findsOneWidget);
+      expect(find.text('18 Sep, 10:00'), findsOneWidget);
+      expect(find.text('18 Sep, 09:00'), findsOneWidget);
+      final newestY = tester.getTopLeft(find.text('18 Sep, 11:00')).dy;
+      final middleY = tester.getTopLeft(find.text('18 Sep, 10:00')).dy;
+      final oldestY = tester.getTopLeft(find.text('18 Sep, 09:00')).dy;
+      expect(newestY, lessThan(middleY));
+      expect(middleY, lessThan(oldestY));
+      // The TL/Owner status badges are on the tiles too.
+      expect(find.text('TL Not Verified Yet'), findsNWidgets(3));
+      expect(find.text('Waiting'), findsNWidgets(3));
+
+      // Tapping a tile closes the popup and opens the decision sheet.
+      await tester.tap(find.text('18 Sep, 11:00'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('3 reports at this location'), findsNothing);
+      expect(find.text('VALIDATE'), findsOneWidget);
+      expect(fetches, 1); // no decision was saved: no re-fetch yet
+    });
+
     testWidgets(
       'shows a retry card and an offline snackbar when the read fails',
       (tester) async {
