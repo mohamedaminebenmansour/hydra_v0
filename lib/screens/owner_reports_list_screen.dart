@@ -281,6 +281,7 @@ class _OwnerReportsListScreenState extends State<OwnerReportsListScreen> {
             key: ValueKey('owner_list_card_${ownerLocalIdOf(row)}'),
             report: report,
             showUnreadDot: false,
+            showCloudStatus: false,
             onTap: () => _openReport(row),
           ),
         );

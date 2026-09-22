@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/report.dart';
+import '../role.dart';
+import '../services/sync_service.dart';
 import 'report_thumbnail.dart';
 import 'tl_validation_badge.dart';
 
@@ -197,15 +199,107 @@ Widget reportValidationTracker(Report report, {bool isTeamLeader = false}) {
   );
 }
 
+/// Retries a failed sync from the card's Cloud Status footer. The History
+/// screen watches Isar live, so a successful retry rebuilds the card to
+/// green with no manual refresh. [retry] is injectable for tests; production
+/// always runs [SyncService.retryReport]. Errors are swallowed: the footer
+/// stays red and tappable so the user can try again.
+Future<void> _retrySync(
+  BuildContext context,
+  Report report, {
+  Future<void> Function(Report report)? retry,
+}) async {
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('Retrying sync...')));
+  try {
+    if (retry != null) {
+      await retry(report);
+    } else {
+      await SyncService.retryReport(report.id);
+    }
+  } catch (_) {
+    // Offline / DB hiccup: stay on the red footer, the user can tap again.
+  }
+}
+
+/// The 'Cloud Status' footer at the bottom of the card (field roles only):
+/// green 'Synced', amber 'Waiting to sync', or a red tappable
+/// 'Sync Failed - Tap to retry' that re-runs the push.
+Widget _cloudStatusFooter(BuildContext context, Report report) {
+  return Padding(
+    padding: const EdgeInsets.only(top: 8.0),
+    child: switch (report.syncState) {
+      SyncState.synced => const Row(
+        key: Key('cloud_status_synced'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_done, color: Colors.green, size: 16),
+          SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Synced',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      SyncState.local || SyncState.uploading => const Row(
+        key: Key('cloud_status_pending'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_upload, color: Colors.amber, size: 16),
+          SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Waiting to sync',
+              style: TextStyle(color: Colors.amber, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      SyncState.failed => InkWell(
+        key: const Key('cloud_status_failed'),
+        onTap: () => _retrySync(context, report),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 16),
+            SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                'Sync Failed - Tap to retry',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    },
+  );
+}
+
 /// One glanceable, icon-dominant report tile: a 100x100 photo on the left with
 /// the ownerStatus border, a giant type icon on the right, and the 3-node
-/// validation tracker (Submitted -> TL -> Owner) underneath.
+/// validation tracker (Submitted -> TL -> Owner) underneath, plus the
+/// 'Cloud Status' footer (field roles only).
 class TrafficCard extends StatelessWidget {
   const TrafficCard({
     super.key,
     required this.report,
     this.isTeamLeader = false,
     this.showUnreadDot = true,
+    this.showCloudStatus = userRole != 'owner',
     this.onTap,
   });
 
@@ -217,6 +311,10 @@ class TrafficCard extends StatelessWidget {
   /// The Owner's thin-client reports carry no read state; their list turns
   /// the WhatsApp-style unread dot off.
   final bool showUnreadDot;
+
+  /// The Owner does not use local sync, so their list turns the Cloud Status
+  /// footer off (defaults to `userRole != 'owner'`).
+  final bool showCloudStatus;
 
   final VoidCallback? onTap;
 
@@ -252,23 +350,32 @@ class TrafficCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Right side: dominant type icon + the 3-node validation tracker.
+                  // Right side: dominant type icon + the 3-node validation
+                  // tracker, with the Cloud Status footer underneath.
                   Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          trafficTypeIcon(report.type),
-                          size: 28,
-                          color: trafficTypeColor(report.type),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              trafficTypeIcon(report.type),
+                              size: 28,
+                              color: trafficTypeColor(report.type),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: reportValidationTracker(
+                                report,
+                                isTeamLeader: isTeamLeader,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: reportValidationTracker(
-                            report,
-                            isTeamLeader: isTeamLeader,
-                          ),
-                        ),
+                        if (showCloudStatus)
+                          _cloudStatusFooter(context, report),
                       ],
                     ),
                   ),
