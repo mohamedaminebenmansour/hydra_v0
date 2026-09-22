@@ -9,14 +9,59 @@ import 'history_screen.dart';
 import 'home_screen.dart';
 import '../widgets/report_sheet_actions.dart';
 
-/// The Team Leader's "Manager's Inbox" (Chef de Chantier Dashboard).
+// ---------------------------------------------------------------------------
+// The Team Leader's "Action Center" (Chef de Chantier Inbox).
+//
+// The inbox rules are pure functions: the queue is resolved by [tlInboxQueue]
+// and rendered by [tlInboxTypeLabel] / [tlInboxTimeLabel], so the ordering can
+// be unit-tested without pumping a widget.
+// ---------------------------------------------------------------------------
+
+/// Sort rank of a report type in the TL inbox: 'material' and 'problem' are
+/// the ones a site cannot proceed without, so they float above plain 'work'.
+int tlInboxRank(String type) => type == 'work' ? 1 : 0;
+
+/// The inbox queue for [reports]: only what still waits for the Team Leader
+/// ([Report.needsTlValidation] — 'work'/'material' without a gate decision;
+/// 'problem' reports never pass the gate), sorted by [tlInboxRank] and then
+/// OLDEST FIRST, so nothing on site gets forgotten.
+List<Report> tlInboxQueue(List<Report> reports) {
+  final queue = reports.where((r) => r.needsTlValidation).toList();
+  queue.sort((a, b) {
+    final rank = tlInboxRank(a.type).compareTo(tlInboxRank(b.type));
+    if (rank != 0) return rank;
+    return a.timestamp.compareTo(b.timestamp);
+  });
+  return queue;
+}
+
+/// The big word on an inbox row ('🔨 WORK REQUEST', '📦 MATERIAL REQUEST',
+/// '⚠️ PROBLEM REPORT').
+String tlInboxTypeLabel(String type) => switch (type) {
+  'material' => '📦 MATERIAL REQUEST',
+  'problem' => '⚠️ PROBLEM REPORT',
+  _ => '🔨 WORK REQUEST',
+};
+
+/// The time on an inbox row: '09:30 AM' for today, '17 Sep, 09:30 AM' for
+/// anything older (an oldest-first queue must still show *when*).
+String tlInboxTimeLabel(DateTime time) {
+  final local = time.toLocal();
+  final now = DateTime.now();
+  final isToday =
+      local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day;
+  return DateFormat(isToday ? 'hh:mm a' : 'd MMM, hh:mm a').format(local);
+}
+
+/// The Team Leader's "Action Center": a manager's inbox of everything still
+/// awaiting the gate, with the camera demoted to a floating shortcut.
 ///
-/// Shown instead of the subcontractor's 3-button capture screen when the app
-/// is launched with `--dart-define=USER_ROLE=team_leader`. It lists every
-/// report that still awaits a gate decision (fresh 'work'/'material' reports),
-/// and tapping a card opens the detail screen hosting the three validation
-/// actions (validate on site / remotely / reject). The camera action routes to
-/// the capture workspace so a TL can still file their own report.
+/// Shown instead of the subcontractor's 3-button capture screen when the app is
+/// launched with `--dart-define=USER_ROLE=team_leader`. Tapping a row opens the
+/// shared report sheet, which resolves its own role-based bar (REMOTE / ON SITE
+/// / REJECT) for every report still awaiting the gate.
 class TeamLeaderHomeScreen extends StatefulWidget {
   const TeamLeaderHomeScreen({super.key, this.reportsStream});
 
@@ -56,14 +101,6 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
     }
   }
 
-  /// The capture workspace (the subcontractor's home): it hosts the camera
-  /// capture flow that feeds [SaveReportScreen], so the TL reuses it wholesale.
-  Future<void> _openCapture() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const HomeScreen()));
-  }
-
   /// Opens the read-only history (all reports, all tabs).
   Future<void> _openHistory() async {
     await Navigator.of(
@@ -82,20 +119,29 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
     );
   }
 
-  /// One pending-report row: thumbnail, type, time.
-  Widget _pendingCard(Report report) {
+  /// One inbox row: a slim card with the Sub's photo, the type request and its
+  /// time, and a giant chevron that says "tap me to decide".
+  Widget _inboxTile(Report report) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      key: ValueKey('tl_inbox_${report.id}'),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
-        leading: ReportThumbnail(report: report, size: 56),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ReportThumbnail(report: report, size: 50),
+        ),
         title: Text(
-          report.type == 'work' ? 'Work report' : 'Material report',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          tlInboxTypeLabel(report.type),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
         subtitle: Text(
-          DateFormat('d MMM, HH:mm').format(report.timestamp.toLocal()),
+          tlInboxTimeLabel(report.timestamp),
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right, size: 36),
         onTap: () => _openForValidation(report),
       ),
     );
@@ -105,7 +151,13 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chef de Chantier Dashboard'),
+        // History is a small door in the corner: this screen is the queue.
+        leading: IconButton(
+          icon: const Icon(Icons.history),
+          tooltip: 'History',
+          onPressed: _openHistory,
+        ),
+        title: const Text('Chef de Chantier'),
         actions: [
           StreamBuilder<int>(
             stream: DatabaseService.watchPendingCount(),
@@ -145,11 +197,6 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.camera_alt),
-            tooltip: 'New report',
-            onPressed: _openCapture,
-          ),
         ],
       ),
       body: StreamBuilder<List<Report>>(
@@ -160,38 +207,39 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final pending = snapshot.data!
-              .where((r) => r.needsTlValidation)
-              .toList();
-          if (pending.isEmpty) {
+          final queue = tlInboxQueue(snapshot.data!);
+          if (queue.isEmpty) {
             return const Center(
-              child: Text(
-                'All caught up. No work pending verification.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.coffee, size: 64, color: Colors.brown),
+                  SizedBox(height: 12),
+                  Text(
+                    'Inbox Zero. All caught up.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                ],
               ),
             );
           }
           return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: pending.length,
-            itemBuilder: (context, index) => _pendingCard(pending[index]),
+            padding: const EdgeInsets.only(top: 6, bottom: 96),
+            itemCount: queue.length,
+            itemBuilder: (context, index) => _inboxTile(queue[index]),
           );
         },
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 0,
-        onTap: (index) {
-          // Only the History tab navigates; 'To Verify' is this screen itself.
-          if (index == 1) _openHistory();
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.pending_actions),
-            label: 'To Verify',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-        ],
+      // The camera is a secondary action now: one floating shortcut with the
+      // three types behind it, instead of three full-screen buttons.
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => showCaptureTypeSheet(context),
+        icon: const Icon(Icons.camera_alt),
+        label: const Text(
+          'CAPTURE',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+        ),
       ),
     );
   }

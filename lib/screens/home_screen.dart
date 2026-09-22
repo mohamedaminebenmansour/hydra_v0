@@ -19,6 +19,93 @@ import 'site_map_screen.dart';
 /// Owner updates newer than this drive the red badge on the History FAB.
 const String _historyLastOpenedKey = 'historyLastOpenedAtMs';
 
+// ---------------------------------------------------------------------------
+// The capture flow, shared by both home screens.
+//
+// The subcontractor reaches it from the three giant buttons; the Team Leader
+// reaches the exact same flow from the CAPTURE floating button's type picker,
+// so a report filed by a TL is compressed, persisted and saved identically.
+// ---------------------------------------------------------------------------
+
+/// Opens the camera, compresses the capture and pushes [SaveReportScreen] for
+/// a report of [type] ('work' | 'problem' | 'material').
+///
+/// Every failure is swallowed with a SnackBar: a missing camera or a broken
+/// capture must never crash the home screen.
+Future<void> startReportCapture(BuildContext context, String type) async {
+  final picker = ImagePicker();
+  try {
+    final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+    if (photo == null || !context.mounted) return; // user cancelled
+
+    // Compress the capture down to a small JPEG (640px max, quality 70) and
+    // store it persistently in the documents directory so the OS does not
+    // delete it and it uploads quickly even on slow 3G networks.
+    final dir = await getApplicationDocumentsDirectory();
+    final reportsDir = await Directory(
+      '${dir.path}/reports',
+    ).create(recursive: true);
+    final savedPath =
+        '${reportsDir.path}/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    String storedPath;
+    try {
+      final compressed = await FlutterImageCompress.compressAndGetFile(
+        photo.path,
+        savedPath,
+        minWidth: 640,
+        minHeight: 640,
+        quality: 70,
+        format: CompressFormat.jpeg,
+      );
+      if (compressed != null) {
+        storedPath = compressed.path;
+        // The original raw capture is no longer needed; remove it to save
+        // space (best effort).
+        try {
+          await File(photo.path).delete();
+        } catch (e, st) {
+          debugPrint('ImageFlow: raw capture cleanup failed: $e\n$st');
+        }
+      } else {
+        debugPrint(
+          'ImageFlow: compressAndGetFile returned null '
+          'for $savedPath — falling back to persistent copy',
+        );
+        storedPath = await ReportLocalService.persistMedia(photo.path, 'photo');
+      }
+    } catch (e, st) {
+      // Compression unavailable: fall back to a persistent raw copy.
+      debugPrint('ImageFlow: compression threw, using raw copy: $e\n$st');
+      storedPath = await ReportLocalService.persistMedia(photo.path, 'photo');
+    }
+
+    // Never navigate with a photo path that does not point at a real,
+    // non-empty file — otherwise the save step would persist a broken path.
+    if (!await ReportLocalService.isValidFile(storedPath)) {
+      debugPrint('ImageFlow: stored photo invalid: "$storedPath"');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not store photo')));
+      return;
+    }
+
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SaveReportScreen(type: type, photoPath: storedPath),
+      ),
+    );
+  } catch (e, st) {
+    debugPrint('ImageFlow: camera flow failed: $e\n$st');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Camera not available')));
+  }
+}
+
 /// The main screen: three giant, tag-free action buttons and a history FAB.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,8 +115,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final ImagePicker _picker = ImagePicker();
-
   /// True while a cloud sync is in flight (spinner shown in the app bar).
   bool _isSyncing = false;
 
@@ -96,81 +181,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Catch any button tap: immediately open the camera, compress the capture,
-  /// then open the Save Report screen (voice note + confirm).
-  Future<void> _onTap(String type) async {
-    try {
-      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-      if (photo == null || !mounted) return; // user cancelled
-
-      // Compress the capture down to a small JPEG (640px max, quality 70) and
-      // store it persistently in the documents directory so the OS does not
-      // delete it and it uploads quickly even on slow 3G networks.
-      final dir = await getApplicationDocumentsDirectory();
-      final reportsDir = await Directory(
-        '${dir.path}/reports',
-      ).create(recursive: true);
-      final savedPath =
-          '${reportsDir.path}/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-      String storedPath;
-      try {
-        final compressed = await FlutterImageCompress.compressAndGetFile(
-          photo.path,
-          savedPath,
-          minWidth: 640,
-          minHeight: 640,
-          quality: 70,
-          format: CompressFormat.jpeg,
-        );
-        if (compressed != null) {
-          storedPath = compressed.path;
-          // The original raw capture is no longer needed; remove it to save
-          // space (best effort).
-          try {
-            await File(photo.path).delete();
-          } catch (e, st) {
-            debugPrint('ImageFlow: raw capture cleanup failed: $e\n$st');
-          }
-        } else {
-          debugPrint(
-            'ImageFlow: compressAndGetFile returned null '
-            'for $savedPath — falling back to persistent copy',
-          );
-          storedPath =
-              await ReportLocalService.persistMedia(photo.path, 'photo');
-        }
-      } catch (e, st) {
-        // Compression unavailable: fall back to a persistent raw copy.
-        debugPrint('ImageFlow: compression threw, using raw copy: $e\n$st');
-        storedPath = await ReportLocalService.persistMedia(photo.path, 'photo');
-      }
-
-      // Never navigate with a photo path that does not point at a real,
-      // non-empty file — otherwise the save step would persist a broken path.
-      if (!await ReportLocalService.isValidFile(storedPath)) {
-        debugPrint('ImageFlow: stored photo invalid: "$storedPath"');
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not store photo')));
-        return;
-      }
-
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => SaveReportScreen(type: type, photoPath: storedPath),
-        ),
-      );
-      if (mounted) setState(() {});
-    } catch (e, st) {
-      debugPrint('ImageFlow: camera flow failed: $e\n$st');
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Camera not available')));
-    }
-  }
+  /// then open the Save Report screen (voice note + confirm). The flow itself
+  /// lives in [startReportCapture] so the Team Leader's CAPTURE FAB reuses it.
+  Future<void> _onTap(String type) => startReportCapture(context, type);
 
   Future<void> _openHistory() async {
     // Capture the navigator before any async gap (lint-safe).
@@ -291,4 +304,91 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+/// The three report types offered by the CAPTURE picker, in button order.
+const List<({String type, String label, IconData icon, Color color})>
+captureTypeOptions = [
+  (type: 'work', label: 'WORK', icon: Icons.handyman, color: Colors.blue),
+  (
+    type: 'problem',
+    label: 'PROBLEM',
+    icon: Icons.warning_amber_rounded,
+    color: Colors.red,
+  ),
+  (
+    type: 'material',
+    label: 'MATERIAL',
+    icon: Icons.inventory_2,
+    color: Colors.amber,
+  ),
+];
+
+/// Asks which kind of report to capture, then runs the shared capture flow.
+///
+/// One giant tap target per type (never a dropdown), so a Team Leader filing
+/// his own report keeps the field app's "no reading, no thinking" ergonomics.
+Future<void> showCaptureTypeSheet(BuildContext context) async {
+  final type = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Center(
+              child: Text(
+                'NEW REPORT',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final option in captureTypeOptions) ...[
+              SizedBox(
+                height: 68,
+                child: Material(
+                  color: option.color,
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(sheetContext).pop(option.type),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(option.icon, color: Colors.white, size: 28),
+                        const SizedBox(width: 12),
+                        Text(
+                          option.label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+  if (type == null || !context.mounted) return; // dismissed
+  await startReportCapture(context, type);
 }
