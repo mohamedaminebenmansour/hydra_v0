@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _picker = ImagePicker();
 
   /// True while a cloud sync is in flight (spinner shown in the app bar).
-  bool _syncing = false;
+  bool _isSyncing = false;
 
   /// Fresh owner updates (changed after last History open, within 24h).
   /// Drives the red badge on the History FAB.
@@ -71,10 +71,13 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _freshOwnerUpdates = count);
   }
 
-  /// Triggers a Supabase sync of all pending reports.
-  Future<void> _sync() async {
-    if (_syncing) return;
-    setState(() => _syncing = true);
+  /// Manual sync: pushes every unsynced report to Supabase.
+  Future<void> _syncReports() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Syncing...')));
     try {
       final synced = await SyncService.syncPendingReports();
       if (!mounted) return;
@@ -88,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SnackBar(content: Text('Sync failed — check connection')),
       );
     } finally {
-      if (mounted) setState(() => _syncing = false);
+      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
@@ -186,48 +189,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) _refreshOwnerBadge();
   }
 
-  /// Opens a compact bottom sheet with the sync status.
-  void _openSyncStatus(BuildContext context, int pendingCount) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                pendingCount == 0 ? Icons.cloud_done : Icons.cloud_upload,
-                size: 64,
-                color: pendingCount == 0 ? Colors.green : Colors.amber.shade700,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                pendingCount == 0
-                    ? 'All reports synced'
-                    : '$pendingCount report(s) waiting to sync',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: pendingCount == 0 ? null : () => _sync(),
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Sync now'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -247,9 +208,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           StreamBuilder<int>(
             stream: DatabaseService.watchPendingCount(),
+            initialData: 0,
             builder: (context, snapshot) {
-              final pending = snapshot.data ?? 0;
-              if (_syncing) {
+              if (_isSyncing) {
                 return const Padding(
                   padding: EdgeInsets.all(14),
                   child: SizedBox(
@@ -262,17 +223,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               }
-              return IconButton(
-                icon: Badge.count(
-                  count: pending,
-                  isLabelVisible: pending > 0,
-                  child: Icon(
-                    pending == 0 ? Icons.cloud_done : Icons.cloud_upload,
-                    color: pending == 0 ? Colors.white : Colors.amber.shade300,
+              final pending = snapshot.data ?? 0;
+              if (pending > 0) {
+                return IconButton(
+                  icon: Badge.count(
+                    count: pending,
+                    child: const Icon(
+                      Icons.cloud_upload,
+                      color: Colors.amber,
+                    ),
                   ),
-                ),
-                tooltip: pending == 0 ? 'All synced' : 'Sync to cloud',
-                onPressed: () => _openSyncStatus(context, pending),
+                  tooltip: 'Sync to cloud',
+                  onPressed: _syncReports,
+                );
+              }
+              return IconButton(
+                icon: const Icon(Icons.cloud_done, color: Colors.white),
+                tooltip: 'All synced',
+                onPressed: null,
               );
             },
           ),

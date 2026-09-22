@@ -273,12 +273,16 @@ class DatabaseService {
   static Stream<int> watchPendingCount() {
     // Never throw from a build-phase stream getter: an unopened database
     // simply reports "nothing queued".
-    if (!isInitialized) return const Stream<int>.empty();
+    if (!isInitialized) return Stream<int>.value(0);
     return _isar.reports
         .filter()
         .statusEqualTo('pending')
         .or()
+        .statusEqualTo('local')
+        .or()
         .statusEqualTo('failed')
+        .or()
+        .statusEqualTo('uploading')
         .watch(fireImmediately: true)
         .map((list) => list.length);
   }

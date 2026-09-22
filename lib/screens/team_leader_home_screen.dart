@@ -29,14 +29,31 @@ class TeamLeaderHomeScreen extends StatefulWidget {
 }
 
 class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
-  /// Pushes the pending list off to Supabase. Offline-first: it no-ops
-  /// gracefully without a connection and the retry logic lives in the service.
-  Future<void> _sync() async {
-    await SyncService.syncPendingReports();
-    if (!mounted) return;
+  /// True while a cloud sync is in flight (spinner shown in the app bar).
+  bool _isSyncing = false;
+
+  /// Manual sync: pushes every unsynced report to Supabase.
+  Future<void> _syncReports() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Sync started')));
+    ).showSnackBar(const SnackBar(content: Text('Syncing...')));
+    try {
+      final synced = await SyncService.syncPendingReports();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Synced $synced report(s)')),
+      );
+    } catch (e, st) {
+      debugPrint('SyncFlow: TL sync failed: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sync failed — check connection')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
   }
 
   /// The capture workspace (the subcontractor's home): it hosts the camera
@@ -90,10 +107,43 @@ class _TeamLeaderHomeScreenState extends State<TeamLeaderHomeScreen> {
       appBar: AppBar(
         title: const Text('Chef de Chantier Dashboard'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Sync now',
-            onPressed: _sync,
+          StreamBuilder<int>(
+            stream: DatabaseService.watchPendingCount(),
+            initialData: 0,
+            builder: (context, snapshot) {
+              if (_isSyncing) {
+                return const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                );
+              }
+              final pending = snapshot.data ?? 0;
+              if (pending > 0) {
+                return IconButton(
+                  icon: Badge.count(
+                    count: pending,
+                    child: const Icon(
+                      Icons.cloud_upload,
+                      color: Colors.amber,
+                    ),
+                  ),
+                  tooltip: 'Sync to cloud',
+                  onPressed: _syncReports,
+                );
+              }
+              return IconButton(
+                icon: const Icon(Icons.cloud_done, color: Colors.white),
+                tooltip: 'All synced',
+                onPressed: null,
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.camera_alt),
