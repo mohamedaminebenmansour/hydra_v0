@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -163,23 +165,144 @@ void main() {
     });
   });
 
-  group('Capture sheet (step 1)', () {
-    testWidgets('asks for the delivery photo before the voice note', (
+  group('Capture sheet (photo-first, voice only on issue)', () {
+    /// The InkWell of one giant verdict label (nearest ancestor).
+    InkWell verdictInk(WidgetTester tester, String label) =>
+        tester.widget<InkWell>(
+          find
+              .ancestor(of: find.text(label), matching: find.byType(InkWell))
+              .first,
+        );
+
+    /// Smallest valid PNG (1x1, transparent) so `Image.file` resolves for
+    /// real instead of falling into its error builder (same bytes
+    /// save_report_ui_test uses).
+    const png = <int>[
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+      0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    /// Writes that tiny image as the "capture" the camera seam hands back.
+    /// SYNC on purpose: awaiting dart:io futures inside the FakeAsync
+    /// widget-test zone deadlocks (the same rule save_report_ui_test follows).
+    String fakeCapture() {
+      final file = File(
+        '${Directory.systemTemp.path}/reception_test_'
+        '${DateTime.now().microsecondsSinceEpoch}.png',
+      );
+      file.writeAsBytesSync(png);
+      return file.path;
+    }
+
+    testWidgets('auto-opens the camera once; a cancel disables the verdicts', (
       tester,
     ) async {
+      var cameraCalls = 0;
       await tester.pumpWidget(
-        const MaterialApp(home: Scaffold(body: MaterialReceptionSheet())),
+        MaterialApp(
+          home: Scaffold(
+            body: MaterialReceptionSheet(
+              cameraSource: () async {
+                cameraCalls++;
+                return null; // the user cancelled the camera
+              },
+            ),
+          ),
+        ),
       );
-      expect(find.text('STEP 1/2 — DELIVERY PHOTO'), findsOneWidget);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Spec Step 1: the camera fires automatically, ONE shot only.
+      expect(cameraCalls, 1);
+      expect(find.text('DELIVERY PHOTO'), findsOneWidget);
       expect(find.text('TAKE PHOTO'), findsOneWidget);
+      // The old step structure is gone: no NEXT, no voice on the photo step.
+      expect(find.text('NEXT: RECORD VOICE'), findsNothing);
       expect(find.text('RECORD VOICE'), findsNothing);
-      expect(find.text('ACCEPT ALL'), findsNothing);
-      // Nothing captured yet: the next step stays locked.
-      final next = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'NEXT: RECORD VOICE'),
-      );
-      expect(next.onPressed, isNull);
+      // Spec Step 2: both giant verdicts sit directly below the photo…
+      expect(find.text('ACCEPT ALL'), findsOneWidget);
+      expect(find.text('REPORT ISSUE'), findsOneWidget);
+      // …but stay locked until a photo exists.
+      expect(verdictInk(tester, 'ACCEPT ALL').onTap, isNull);
+      expect(verdictInk(tester, 'REPORT ISSUE').onTap, isNull);
       expect(find.text('Cancel reception'), findsOneWidget);
+    });
+
+    testWidgets('happy path: photo then ACCEPT ALL, no voice asked (3 clicks)', (
+      tester,
+    ) async {
+      final capture = fakeCapture();
+      MaterialReceptionResult? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: FilledButton(
+                  onPressed: () async {
+                    result = await showMaterialReceptionSheet(
+                      context,
+                      cameraSource: () async => capture,
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The auto-camera adopted the capture and unlocked the verdicts.
+      expect(verdictInk(tester, 'ACCEPT ALL').onTap, isNotNull);
+      expect(verdictInk(tester, 'REPORT ISSUE').onTap, isNotNull);
+      expect(find.text('RECORD VOICE'), findsNothing); // never asked
+
+      await tester.tap(find.text('ACCEPT ALL'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(result, isNotNull);
+      expect(result!.accepted, isTrue);
+      expect(result!.voicePath, ''); // spec: voice only if there is a problem
+      expect(result!.photoPath, isNotEmpty);
+    });
+
+    testWidgets('REPORT ISSUE opens the mandatory voice step', (tester) async {
+      final capture = fakeCapture();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MaterialReceptionSheet(cameraSource: () async => capture),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.text('REPORT ISSUE'));
+      await tester.pump();
+
+      expect(find.text('REPORT ISSUE — VOICE NOTE'), findsOneWidget);
+      expect(find.text('RECORD VOICE'), findsOneWidget);
+      // Mandatory voice: CONFIRM ISSUE does not even appear until a note was
+      // recorded (the mic itself is a native plugin tests can't drive).
+      expect(find.text('CONFIRM ISSUE'), findsNothing);
+
+      // Mis-tap safety: Back returns to the photo verdict.
+      await tester.tap(find.text('Back'));
+      await tester.pump();
+      expect(find.text('DELIVERY PHOTO'), findsOneWidget);
+      expect(find.text('ACCEPT ALL'), findsOneWidget);
     });
   });
 
@@ -334,6 +457,135 @@ void main() {
 
       expect(find.text('Photo file missing, cannot save'), findsOneWidget);
       expect(find.text('Voice note required'), findsNothing);
+    });
+  });
+
+  group('RESOLVE DISPUTE (Owner closure)', () {
+    /// A delivery dispute: the Sub reported an issue with the reception.
+    Report disputedMaterial() => receivedMaterial(accepted: false);
+
+    test('the condition needs all three spec clauses', () {
+      expect(disputeNeedsOwnerResolution(disputedMaterial()), isTrue);
+      // Not a material report.
+      expect(
+        disputeNeedsOwnerResolution(
+          disputedMaterial()
+            ..type = 'work'
+            ..timestamp = DateTime(2026, 9, 22, 9),
+        ),
+        isFalse,
+      );
+      // Not rejected (the sub accepted the delivery).
+      expect(
+        disputeNeedsOwnerResolution(receivedMaterial(accepted: true)),
+        isFalse,
+      );
+      // No reception evidence captured.
+      expect(
+        disputeNeedsOwnerResolution(
+          disputedMaterial()..receptionPhotoPath = '',
+        ),
+        isFalse,
+      );
+    });
+
+    test('only the Owner role gets the one giant dark-green button', () {
+      final report = disputedMaterial();
+      final owner = defaultActionsFor(report, role: 'owner');
+      expect(owner.buttons, hasLength(1));
+      final button = owner.buttons.single;
+      expect(button.label, 'RESOLVE DISPUTE');
+      expect(button.color, Colors.green.shade800);
+      expect(button.icon, Icons.check_circle);
+      for (final role in ['subcontractor', 'team_leader']) {
+        final actions = defaultActionsFor(report, role: role);
+        expect(
+          actions.buttons.map((b) => b.label),
+          isNot(contains('RESOLVE DISPUTE')),
+          reason: role,
+        );
+      }
+    });
+
+    test('ownerReportActions swaps ORDER/REJECT for the single button', () {
+      final actions = ownerReportActions(
+        report: disputedMaterial(),
+        writeDecision: (localId, status) async {},
+      );
+      expect(actions.buttons, hasLength(1));
+      expect(actions.buttons.single.label, 'RESOLVE DISPUTE');
+    });
+
+    test('a resolved (validated) material shows no owner actions at all', () {
+      final resolved = receivedMaterial(accepted: true);
+      expect(
+        ownerReportActions(
+          report: resolved,
+          writeDecision: (localId, status) async {},
+        ).buttons,
+        isEmpty,
+      );
+      expect(
+        defaultActionsFor(resolved, role: 'owner').buttons,
+        isEmpty,
+      );
+      // …and the field roles keep the same empty bar (nobody can act).
+      expect(
+        defaultActionsFor(resolved, role: 'subcontractor').buttons,
+        isEmpty,
+      );
+      expect(
+        defaultActionsFor(resolved, role: 'team_leader').buttons,
+        isEmpty,
+      );
+    });
+
+    test('an owner-rejected WORK report keeps its normal bar untouched', () {
+      final rejectedWork = Report()
+        ..type = 'work'
+        ..timestamp = DateTime(2026, 9, 22, 9)
+        ..ownerStatus = 'rejected';
+      final actions = ownerReportActions(
+        report: rejectedWork,
+        writeDecision: (localId, status) async {},
+      );
+      expect(actions.buttons, hasLength(2)); // VALIDATE + REJECT, unchanged
+      expect(
+        actions.buttons.map((b) => b.label),
+        isNot(contains('RESOLVE DISPUTE')),
+      );
+    });
+
+    testWidgets('tapping RESOLVE writes validated and closes the sheet', (
+      tester,
+    ) async {
+      final report = disputedMaterial()..id = 9;
+      String? written;
+      await pumpReportSheet(
+        tester,
+        report: report,
+        role: 'owner',
+        selfActor: 'owner',
+        actions: ownerReportActions(
+          report: report,
+          writeDecision: (localId, status) async {
+            written = status;
+          },
+        ),
+      );
+
+      expect(find.text('RESOLVE DISPUTE'), findsOneWidget);
+      expect(find.text('ORDER'), findsNothing);
+      expect(find.text('REJECT'), findsNothing);
+
+      await tester.tap(find.text('RESOLVE DISPUTE'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(written, 'validated');
+      expect(report.ownerStatus, 'validated');
+      // The sheet closed itself (flow returned true).
+      expect(find.text('RESOLVE DISPUTE'), findsNothing);
     });
   });
 

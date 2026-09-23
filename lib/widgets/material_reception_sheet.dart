@@ -16,9 +16,12 @@ import 'notify_gate.dart';
 // "Material Reception" capture: the two-step sheet the field team walks through
 // when an ordered delivery arrives.
 //
-//   Step 1 (photo): the camera, a thumbnail of what was captured, then 'Next'.
-//   Step 2 (voice): the microphone, then the two giant verdicts
-//                   [ACCEPT ALL] (green) / [REPORT ISSUE] (red).
+//   Step 1 (auto-camera): the camera opens the moment the sheet appears; the
+//                   sheet then shows the thumbnail with the two giant verdicts
+//                   right below it: [ACCEPT ALL] (green) / [REPORT ISSUE] (red).
+//   Step 2 (voice, ONLY when reporting an issue): the microphone, then the
+//                   giant [CONFIRM ISSUE]. The happy path never asks for a
+//                   voice note: Receive -> Camera -> Accept = 3 clicks.
 //
 // A pure capture surface: it never touches Isar, never pushes to the cloud and
 // returns what it captured ([MaterialReceptionResult]) so the flow that opened
@@ -35,18 +38,20 @@ typedef MaterialReceptionResult = ({
   bool accepted,
 });
 
-/// Opens the two-step reception capture sheet. Returns null when the user
-/// cancels, in which case the report is left untouched.
+/// Opens the reception capture sheet (auto-camera + binary verdict). Returns
+/// null when the user cancels, in which case the report is left untouched.
+/// [cameraSource] overrides the camera pipeline (tests).
 Future<MaterialReceptionResult?> showMaterialReceptionSheet(
-  BuildContext context,
-) {
+  BuildContext context, {
+  Future<String?> Function()? cameraSource,
+}) {
   return showModalBottomSheet<MaterialReceptionResult>(
     context: context,
     isScrollControlled: true,
     isDismissible: false,
     enableDrag: false,
     backgroundColor: Colors.transparent,
-    builder: (_) => const MaterialReceptionSheet(),
+    builder: (_) => MaterialReceptionSheet(cameraSource: cameraSource),
   );
 }
 
@@ -98,7 +103,12 @@ Future<bool> materialReceptionFlow(BuildContext context, Report report) async {
 
 /// The reception capture sheet itself (see [showMaterialReceptionSheet]).
 class MaterialReceptionSheet extends StatefulWidget {
-  const MaterialReceptionSheet({super.key});
+  const MaterialReceptionSheet({super.key, this.cameraSource});
+
+  /// Test seam: returns the raw captured photo path (null/empty = the user
+  /// cancelled the camera). When null — the production default — the real
+  /// ImagePicker camera pipeline runs.
+  final Future<String?> Function()? cameraSource;
 
   @override
   State<MaterialReceptionSheet> createState() => _MaterialReceptionSheetState();
@@ -114,7 +124,8 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
 
   AudioRecorder get _mic => _recorder ??= AudioRecorder();
 
-  /// 0 = delivery photo, 1 = voice note + verdict.
+  /// 0 = auto-camera delivery photo + the binary verdict (the happy path
+  /// lives entirely here); 1 = the issue-only voice note.
   int _step = 0;
   String _photoPath = '';
   String _voicePath = '';
@@ -123,6 +134,17 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
   bool _busy = false;
   Timer? _ticker;
   Timer? _autoStop;
+
+  @override
+  void initState() {
+    super.initState();
+    // Spec Step 1 (Auto-Camera): the camera opens the moment the sheet
+    // appears — ONE shot only; a cancelled camera leaves the verdicts
+    // disabled instead of nagging with a second prompt.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_takePhoto());
+    });
+  }
 
   @override
   void dispose() {
@@ -139,14 +161,13 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
     return Directory('${dir.path}/reports').create(recursive: true);
   }
 
-  /// Step 1: camera → compressed persistent JPEG (light enough for a slow
-  /// link), shown as the thumbnail the user confirms before moving on.
-  Future<void> _takePhoto() async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  /// The production camera pipeline: the OS camera, then a compressed
+  /// persistent JPEG (light enough for a slow link). Falls back to the raw
+  /// capture when compression is unavailable.
+  Future<String?> _cameraCapture() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo == null) return null; // user cancelled
     try {
-      final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-      if (photo == null) return;
       final reportsDir = await _reportsDir();
       final savedPath =
           '${reportsDir.path}/reception_'
@@ -159,7 +180,25 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
         quality: 70,
         format: CompressFormat.jpeg,
       );
-      final finalPath = compressed?.path ?? photo.path;
+      return compressed?.path ?? photo.path;
+    } catch (e, st) {
+      debugPrint('ReceptionFlow: photo compress skipped: $e\n$st');
+      return photo.path;
+    }
+  }
+
+  /// Step 1 (auto-camera): adopt whatever the capture pipeline produced as
+  /// the thumbnail the verdicts act on.
+  /// [MaterialReceptionSheet.cameraSource] stands in for that whole pipeline
+  /// (tests) and returns an already-final path.
+  Future<void> _takePhoto() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final String? finalPath = widget.cameraSource != null
+          ? await widget.cameraSource!()
+          : await _cameraCapture();
+      if (finalPath == null || finalPath.isEmpty) return; // user cancelled
       final previous = _photoPath;
       if (!mounted) return;
       setState(() => _photoPath = finalPath);
@@ -252,16 +291,19 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
     }
   }
 
-  /// Closes the sheet with the binary verdict: ACCEPT ALL (accepted) or REPORT
-  /// ISSUE (the delivery dispute).
+  /// Closes the sheet with the binary verdict: ACCEPT ALL (accepted — the
+  /// happy path, NO voice ever asked, `voicePath` always '') or CONFIRM ISSUE
+  /// (the delivery dispute, whose voice note is mandatory to explain it).
   Future<void> _finish(bool accepted) async {
-    if (_busy || _photoPath.isEmpty || _voicePath.isEmpty) return;
+    if (_busy || _photoPath.isEmpty) return;
+    // An issue must be explained: the recorded voice is its mandatory proof.
+    if (!accepted && _voicePath.isEmpty) return;
     setState(() => _busy = true);
     await _stopRecording();
     if (!mounted) return;
     Navigator.of(context).pop((
       photoPath: _photoPath,
-      voicePath: _voicePath,
+      voicePath: accepted ? '' : _voicePath,
       accepted: accepted,
     ));
   }
@@ -321,19 +363,24 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
     );
   }
 
-  /// Step 1/2 — the delivery photo, then 'Next'.
+  /// Step 1 (auto-camera) — the delivery photo with the binary verdict right
+  /// below it: the happy path is Receive -> Camera -> Accept, three clicks.
+  /// The voice note is NEVER asked here — only the issue branch has one.
   Widget _photoStep() {
     final hasPhoto = _photoPath.isNotEmpty;
+    final canDecide = hasPhoto && !_busy;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Text(
-          'STEP 1/2 — DELIVERY PHOTO',
+          'DELIVERY PHOTO',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
-          'Photograph what arrived: the material, the quantity, any damage.',
+          hasPhoto
+              ? 'Photograph what arrived — accept it, or report the problem.'
+              : 'Photograph what arrived: the material, the quantity, any damage.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
         ),
@@ -352,34 +399,64 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
                 child: const Center(child: Icon(Icons.broken_image)),
               ),
             ),
+          )
+        else
+          Container(
+            height: 140,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt, size: 40, color: Colors.grey),
+                const SizedBox(height: 8),
+                Text(
+                  'Camera cancelled — take a photo to continue.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ],
+            ),
           ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        // Secondary control: the fallback when the auto-camera was cancelled,
+        // or a retake. Never on the happy path, so it costs no extra clicks.
         SizedBox(
           width: double.infinity,
-          height: 56,
-          child: FilledButton.icon(
+          height: 48,
+          child: OutlinedButton.icon(
             onPressed: _busy ? null : _takePhoto,
-            icon: Icon(hasPhoto ? Icons.refresh : Icons.camera_alt),
+            icon: Icon(hasPhoto ? Icons.refresh : Icons.camera_alt, size: 18),
             label: Text(hasPhoto ? 'RETAKE PHOTO' : 'TAKE PHOTO'),
           ),
         ),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          height: 64,
-          child: FilledButton(
-            onPressed: hasPhoto && !_busy
-                ? () => setState(() => _step = 1)
-                : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.blue.shade700,
-              foregroundColor: Colors.white,
+        const SizedBox(height: 12),
+        // Spec Step 2 (The Binary Choice): two giant buttons side by side,
+        // directly below the photo.
+        Row(
+          children: [
+            Expanded(
+              child: _verdictButton(
+                label: 'ACCEPT ALL',
+                icon: Icons.check_circle,
+                color: Colors.green.shade700,
+                enabled: canDecide,
+                onTap: () => _finish(true),
+              ),
             ),
-            child: const Text(
-              'NEXT: RECORD VOICE',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _verdictButton(
+                label: 'REPORT ISSUE',
+                icon: Icons.report_problem,
+                color: Colors.red.shade700,
+                enabled: canDecide,
+                onTap: () => setState(() => _step = 1),
+              ),
             ),
-          ),
+          ],
         ),
         TextButton(
           onPressed: _busy ? null : _cancel,
@@ -389,21 +466,22 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
     );
   }
 
-  /// Step 2/2 — the voice note, then the two giant verdicts.
+  /// Step 2 — ONLY reached by 'REPORT ISSUE': the voice note is mandatory to
+  /// explain the problem, then the giant 'CONFIRM ISSUE' closes the dispute.
   Widget _voiceStep() {
     final hasVoice = _voicePath.isNotEmpty;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Text(
-          'STEP 2/2 — VOICE NOTE',
+          'REPORT ISSUE — VOICE NOTE',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
           hasVoice
-              ? 'Voice captured — give the verdict now.'
-              : 'Say what arrived, and what is missing or broken.',
+              ? 'Explanation recorded — confirm to report the issue.'
+              : 'Say what is wrong with the delivery (required).',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
         ),
@@ -434,33 +512,23 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
             ),
           ),
         if (hasVoice) ...[
-          // The binary decision: everything arrived, or there is a dispute.
-          Row(
-            children: [
-              Expanded(
-                child: _verdictButton(
-                  label: 'ACCEPT ALL',
-                  icon: Icons.check_circle,
-                  color: Colors.green.shade700,
-                  onTap: () => _finish(true),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _verdictButton(
-                  label: 'REPORT ISSUE',
-                  icon: Icons.report_problem,
-                  color: Colors.red.shade700,
-                  onTap: () => _finish(false),
-                ),
-              ),
-            ],
+          // The mandatory explanation is recorded: confirm closes the dispute.
+          _verdictButton(
+            label: 'CONFIRM ISSUE',
+            icon: Icons.report_problem,
+            color: Colors.red.shade700,
+            enabled: !_busy,
+            onTap: () => _finish(false),
           ),
           TextButton(
             onPressed: _busy || _recording ? null : _toggleRecord,
             child: const Text('Re-record the voice note'),
           ),
         ],
+        TextButton(
+          onPressed: _busy || _recording ? null : _backToPhoto,
+          child: const Text('Back'),
+        ),
         TextButton(
           onPressed: _busy ? null : _cancel,
           child: const Text('Cancel reception'),
@@ -469,38 +537,56 @@ class _MaterialReceptionSheetState extends State<MaterialReceptionSheet> {
     );
   }
 
+  /// Back from the issue branch: drop any recorded voice (a stale note must
+  /// never leak into a later ACCEPT ALL) and return to the verdict.
+  void _backToPhoto() {
+    final stale = _voicePath;
+    setState(() {
+      _step = 0;
+      _voicePath = '';
+      _seconds = 0;
+    });
+    if (stale.isNotEmpty) unawaited(_deleteQuietly(stale));
+  }
+
   /// One giant verdict: an icon of size 28 with its caption underneath, on the
   /// verdict's own solid colour (same contract as the sheet's action bar).
+  /// [enabled] false dims it and blocks the tap (verdicts before the
+  /// auto-camera produced a photo; CONFIRM before the voice is recorded).
   Widget _verdictButton({
     required String label,
     required IconData icon,
     required Color color,
+    required bool enabled,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: color,
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: _busy ? null : onTap,
-        child: SizedBox(
-          width: double.infinity,
-          height: 96,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 28, color: Colors.white),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
-                  color: Colors.white,
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: Material(
+        color: color,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            width: double.infinity,
+            height: 96,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 28, color: Colors.white),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

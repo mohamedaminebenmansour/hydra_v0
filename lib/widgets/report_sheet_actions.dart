@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/report.dart';
 import '../role.dart';
@@ -379,6 +380,8 @@ ReportSheetActions materialReceptionActions() => ReportSheetActions(
 ///
 /// - An ordered material the field team has not received yet: the giant
 ///   'RECEIVE MATERIAL' action (both field roles, never the Owner).
+/// - A material delivery dispute awaiting the Owner: the single giant
+///   'RESOLVE DISPUTE' administrative closure (Owner role only).
 /// - A closed report (the Owner decided): no actions — the sheet shows its
 ///   disabled grey 'WORK CLOSED' bar.
 /// - A Team Leader and a report still awaiting the gate: REMOTE / ON SITE / REJECT.
@@ -391,6 +394,11 @@ ReportSheetActions defaultActionsFor(Report report, {String? role}) {
   // decision — the closed bar must not swallow it.
   if (materialReceptionNeeded(report, effectiveRole)) {
     return materialReceptionActions();
+  }
+  // "Material Dispute Resolution": the Owner closes the delivery issue the
+  // field team reported — never shown to the field roles.
+  if (effectiveRole == 'owner' && disputeNeedsOwnerResolution(report)) {
+    return resolveDisputeActions();
   }
   if (isReportClosedByOwner(report)) return const ReportSheetActions();
   if (effectiveRole == 'team_leader') {
@@ -436,13 +444,162 @@ ReportActionCallback ownerDecideFlow(
   }
 };
 
+// ---------------------------------------------------------------------------
+// "Material Dispute Resolution": the Owner's administrative closure of the
+// delivery issue the field team reported.
+//
+// The Sub captured the reception evidence (photo + voice) and hit
+// REPORT ISSUE, which lands the report in `ownerStatus == 'rejected'` — a
+// delivery dispute, NOT a problem with the Sub's work (he owes no FIX).
+// The Owner's only job here is to close it: 'validated' means
+// "Closed / Resolved" and requires NO capture of his own.
+// ---------------------------------------------------------------------------
+
+/// True when this material report carries a delivery dispute the Owner still
+/// has to close: the subcontractor reported an issue (`ownerStatus ==
+/// 'rejected'`) and the reception evidence (photo) exists.
+bool disputeNeedsOwnerResolution(Report report) =>
+    report.type == 'material' &&
+    report.ownerStatus == 'rejected' &&
+    report.receptionPhotoPath.isNotEmpty;
+
+/// The single giant action of an unresolved delivery dispute: one dark-green
+/// 'RESOLVE DISPUTE' button filling the whole bar. [writeDecision] is the
+/// Owner screens' injected cloud writer (tests substitute their own); when
+/// null the flow falls back to its default thin-client Supabase write.
+ReportSheetActions resolveDisputeActions({
+  OwnerDecisionWriter? writeDecision,
+}) => ReportSheetActions(
+  note:
+      'The field team reported a delivery issue — close it '
+      'administratively.',
+  buttons: [
+    ReportSheetAction(
+      label: 'RESOLVE DISPUTE',
+      color: Colors.green.shade800,
+      icon: Icons.check_circle,
+      onPressed: (context, report) =>
+          resolveDisputeFlow(context, report, writeDecision: writeDecision),
+    ),
+  ],
+);
+
+/// Closes a delivery dispute: sets `ownerStatus = 'validated'`
+/// ("Closed / Resolved") in the cloud when reachable, or in the local Isar
+/// record when offline (re-queued so [SyncService.syncPendingReports]
+/// delivers it on the next connection). No photo or voice note is ever
+/// required from the Owner — this is a purely administrative closure.
+///
+/// Returns true when the report changed (the sheet closes itself), false when
+/// nothing could be persisted anywhere (disconnected thin client) — the sheet
+/// then stays open with the same "connect" message `ownerDecideFlow` shows.
+Future<bool> resolveDisputeFlow(
+  BuildContext context,
+  Report report, {
+  OwnerDecisionWriter? writeDecision,
+}) async {
+  if (!context.mounted) return false;
+  // 1) Cloud first — the Owner is a thin client over Supabase. The owner
+  //    map/list screens inject their writer (the same seam ORDER/REJECT use);
+  //    otherwise the default write keys the row like `_writeDecisionToSupabase`
+  //    (`local_id`), preferring the remote row id when this device knows it.
+  //    The payload carries `owner_status` only — the exact column the
+  //    existing owner path already writes.
+  var closedInCloud = false;
+  try {
+    if (writeDecision != null) {
+      await writeDecision(report.userId, 'validated');
+      closedInCloud = true;
+    } else if (await SyncService.isOnline()) {
+      final rows = report.supabaseId.isNotEmpty
+          ? await Supabase.instance.client
+                .from('reports')
+                .update({'owner_status': 'validated'})
+                .eq('id', report.supabaseId)
+                .select('id')
+          : await Supabase.instance.client
+                .from('reports')
+                .update({'owner_status': 'validated'})
+                .eq('local_id', report.userId)
+                .select('id');
+      if (rows.isEmpty) {
+        throw StateError(
+          'No remote report matched (localId=${report.userId}, '
+          'supabaseId=${report.supabaseId})',
+        );
+      }
+      closedInCloud = true;
+    }
+  } catch (e, st) {
+    debugPrint('ResolveFlow: cloud write failed: $e\n$st');
+  }
+
+  // 2) Local mirror: persist on every device that owns an Isar record, so an
+  //    offline closure is held locally (and re-queued for the cloud), and an
+  //    online one lights up the local maps/cards before the next pull.
+  var savedLocally = false;
+  try {
+    final local = report.id > 0
+        ? report
+        : await DatabaseService.getReportById(
+            int.tryParse(report.userId) ?? -1,
+          );
+    if (local != null) {
+      await DatabaseService.updateOwnerStatus(local, 'validated');
+      if (!identical(local, report)) {
+        report.ownerStatus = local.ownerStatus;
+        report.ownerStatusAt = local.ownerStatusAt;
+      }
+      if (!closedInCloud && report.supabaseId.isNotEmpty) {
+        // Offline: re-queue the row push so the verdict travels with the next
+        // `_receptionOwnerPayload` update instead of being lost. A report
+        // with no remote row yet is never re-queued — a plain insert would
+        // duplicate the cloud row.
+        local.status = 'local';
+        local.dbStatus = 'pending';
+        await DatabaseService.saveSubStatus(local);
+      }
+      savedLocally = true;
+    }
+  } catch (e, st) {
+    debugPrint('ResolveFlow: local save failed (no local database?): $e\n$st');
+  }
+
+  if (!context.mounted) return closedInCloud || savedLocally;
+  if (!closedInCloud && !savedLocally) {
+    // Nothing was persisted anywhere: say so honestly and keep the sheet open
+    // (same contract as [ownerDecideFlow] on its offline path).
+    notifyGate(context, 'Decision not saved — connect and try again.');
+    return false;
+  }
+  notifyGate(
+    context,
+    closedInCloud ? 'Dispute resolved' : 'Saved offline — will sync',
+  );
+  // Spec: trigger a sync (no-ops offline, retried on connectivity restore).
+  unawaited(SyncService.syncPendingReports());
+  return true;
+}
+
 /// The owner's action bar for one report: the type-specific primary decision
 /// plus REJECT, both live while the report is not finally decided (a
 /// rejection keeps the bar — see [subOwesAFix]).
+///
+/// Two states replace that pair outright:
+///  * a material delivery dispute → the single 'RESOLVE DISPUTE' closure;
+///  * any finally-decided report ([isReportClosedByOwner]) → no buttons at
+///    all, so the sheet renders its grey 'WORK CLOSED' bar (the guard this
+///    function's own doc always promised).
 ReportSheetActions ownerReportActions({
   required Report report,
   required OwnerDecisionWriter writeDecision,
 }) {
+  // "Material Dispute": ONE administrative closure button replaces the normal
+  // ORDER/REJECT pair while the Owner still owes the resolution.
+  if (disputeNeedsOwnerResolution(report)) {
+    return resolveDisputeActions(writeDecision: writeDecision);
+  }
+  if (isReportClosedByOwner(report)) return const ReportSheetActions();
   final type = report.type;
   final primary = switch (type) {
     'problem' => (
