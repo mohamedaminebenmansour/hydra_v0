@@ -120,6 +120,12 @@ class SyncService {
         final local = await DatabaseService.getReportById(localId);
         if (local == null) continue; // unknown report (e.g. pulled row)
         if (local.ownerStatus == remoteStatus) continue;
+        // "Material Reception": a reception verdict taken on this device
+        // ('validated' / 'rejected') must survive until its own push lands — a
+        // remote 'ordered' is simply the state from before the delivery was
+        // received, and adopting it back would erase the decision (and the red
+        // dispute badge) on the very device that made it.
+        if (_isPendingReceptionPush(local, remoteStatus)) continue;
         await DatabaseService.updateOwnerStatus(local, remoteStatus);
         changed++;
       }
@@ -133,6 +139,16 @@ class SyncService {
       return 0;
     }
   }
+
+  /// True while a local "Material Reception" decision is still waiting for its
+  /// cloud push: the report carries its reception capture, the remote row has
+  /// not caught up yet ('ordered' is the pre-delivery state) and the local
+  /// status is one of the two reception verdicts. Any other remote status (the
+  /// Owner changing his mind) is adopted as usual.
+  static bool _isPendingReceptionPush(Report local, String remoteStatus) =>
+      local.hasReceptionMedia &&
+      remoteStatus == 'ordered' &&
+      const ['validated', 'rejected'].contains(local.ownerStatus);
 
   /// Uploads every retryable report to Supabase using partial/resilient
   /// sync. Returns the number of reports that reached a terminal state.
@@ -196,6 +212,55 @@ class SyncService {
         report.voiceStatus = 'synced';
         await DatabaseService.saveSubStatus(report);
         debugPrint('SyncFlow: report ${report.id} voice synced');
+      }
+
+      // 2b) "Material Reception": the reception photo and voice note are the
+      // report's own media for an ordered material, so they must reach the cloud
+      // before the metadata row is inserted/updated below. A non-empty URL is
+      // the completion flag — the same rule as the TL proof media — so a retry
+      // never re-uploads a file it already pushed.
+      //
+      // Each upload has its OWN try-catch: a missing bucket / broken file /
+      // flaky network on one piece must never crash the whole sync run or
+      // prevent the other pieces (voice, TL proof, timeline) from uploading.
+      // The flag below defers the row push instead, so the report is simply
+      // retried on the next sync with its URLs intact.
+      var receptionMediaOk = true;
+      if (report.receptionPhotoPath.isNotEmpty &&
+          report.receptionPhotoUrl.isEmpty) {
+        try {
+          report.receptionPhotoUrl = await _upload(
+            'photo',
+            report.receptionPhotoPath,
+            'image/jpeg',
+          );
+          await DatabaseService.saveSubStatus(report);
+          debugPrint('SyncFlow: report ${report.id} reception photo synced');
+        } catch (e, st) {
+          receptionMediaOk = false;
+          debugPrint(
+            'SyncFlow: report ${report.id} reception photo upload failed '
+            '(will retry): $e\n$st',
+          );
+        }
+      }
+      if (report.receptionVoicePath.isNotEmpty &&
+          report.receptionVoiceUrl.isEmpty) {
+        try {
+          report.receptionVoiceUrl = await _upload(
+            'voice',
+            report.receptionVoicePath,
+            'audio/mp4',
+          );
+          await DatabaseService.saveSubStatus(report);
+          debugPrint('SyncFlow: report ${report.id} reception voice synced');
+        } catch (e, st) {
+          receptionMediaOk = false;
+          debugPrint(
+            'SyncFlow: report ${report.id} reception voice upload failed '
+            '(will retry): $e\n$st',
+          );
+        }
       }
 
       // 3) TL validation proof photo ("Chef de Chantier Gate"). Only present when the
@@ -291,7 +356,16 @@ class SyncService {
         }
       }
 
-      // 4) DB row — only when media are in place.
+      // 4) DB row — only when media are in place. A failed reception upload
+      // defers the row push (the outer catch marks the report failed and the
+      // next sync retries it) so a row can never land without its reception
+      // URLs — they are only ever sent alongside the row write.
+      if (!receptionMediaOk) {
+        throw StateError(
+          'report ${report.id}: reception media not fully uploaded — '
+          'deferring row push',
+        );
+      }
       if (report.isPhotoSynced && report.isVoiceSynced) {
         if (report.dbStatus != 'synced') {
           if (report.supabaseId.isNotEmpty) {
@@ -346,6 +420,24 @@ class SyncService {
     'timeline_events': cloudEventList(report.timelineEvents),
   };
 
+  /// The owner-status columns of a "Material Reception" verdict: the field team
+  /// received an ordered material and decided it arrived as ordered
+  /// ('validated') or that something is missing/broken ('rejected').
+  ///
+  /// Pushed only when the device really holds a reception capture, so a field
+  /// device can never write an owner decision it did not take — every other
+  /// status belongs to the Owner's own flow and is never touched from here. The
+  /// report is already synced (the owner ordered it days ago), which is why this
+  /// travels in the update payload rather than the insert.
+  static Map<String, dynamic> _receptionOwnerPayload(Report report) {
+    if (!report.hasReceptionMedia) return const <String, dynamic>{};
+    return {
+      'owner_status': report.ownerStatus,
+      if (report.ownerStatusAt != null)
+        'owner_status_at': report.ownerStatusAt!.toUtc().toIso8601String(),
+    };
+  }
+
   /// Inserts (or upserts when supabaseId exists) the metadata row.
   static Future<void> _insertRow(Report report) async {
     final payload = <String, dynamic>{
@@ -353,6 +445,8 @@ class SyncService {
       'type': report.type,
       ...urlOnlyField('photo_url', report.photoUrl),
       ...urlOnlyField('voice_url', report.voiceUrl),
+      ...urlOnlyField('reception_photo_url', report.receptionPhotoUrl),
+      ...urlOnlyField('reception_voice_url', report.receptionVoiceUrl),
       'problem_category': report.problemCategory,
       'lat': report.lat,
       'lng': report.lng,
@@ -397,6 +491,12 @@ class SyncService {
     //    with cloud URLs only.
     final payload = _tlValidationPayload(report, allowClear: true)
       ..addAll(urlOnlyField('photo_url', report.photoUrl))
+      // "Material Reception": the ordered material was already synced long
+      // before it was delivered, so the reception media and the binary verdict
+      // always travel on this update path (the report is never re-inserted).
+      ..addAll(urlOnlyField('reception_photo_url', report.receptionPhotoUrl))
+      ..addAll(urlOnlyField('reception_voice_url', report.receptionVoiceUrl))
+      ..addAll(_receptionOwnerPayload(report))
       ..addAll(_threadPayload(report));
     if (payload.isEmpty) return;
     final updated = await Supabase.instance.client
@@ -433,18 +533,39 @@ class SyncService {
         '${lastPulledAt ?? 'beginning'}',
       );
       // The `updated_at` watermark requires the column to exist in Supabase
-      // (alter table reports add column updated_at timestamptz default now());
-      // if it is missing we gracefully fall back to a pull of everything.
-      final rows = lastPulledAt == null
-          ? await Supabase.instance.client
-                .from('reports')
-                .select()
-                .order('id', ascending: true)
-          : await Supabase.instance.client
-                .from('reports')
-                .select()
-                .gt('updated_at', lastPulledAt)
-                .order('id', ascending: true);
+      // (see `supabase/migrations/20260923_material_reception_sync.sql`);
+      // if it is missing we gracefully fall back to a pull of everything —
+      // without that fallback one missing column breaks every pull forever.
+      List<Map<String, dynamic>> rows;
+      if (lastPulledAt == null) {
+        rows = await Supabase.instance.client
+            .from('reports')
+            .select()
+            .order('id', ascending: true);
+      } else {
+        try {
+          rows = await Supabase.instance.client
+              .from('reports')
+              .select()
+              .gt('updated_at', lastPulledAt)
+              .order('id', ascending: true);
+        } on PostgrestException catch (e) {
+          // 42703 = PostgreSQL "undefined column"; anything else (auth,
+          // network) is rethrown so a real outage is never masked by a
+          // surprise full pull.
+          final missingWatermark =
+              e.code == '42703' || e.message.contains('updated_at');
+          if (!missingWatermark) rethrow;
+          debugPrint(
+            'PullFlow: updated_at column unavailable — falling back to a '
+            'full pull (run the Supabase migration to restore the watermark)',
+          );
+          rows = await Supabase.instance.client
+              .from('reports')
+              .select()
+              .order('id', ascending: true);
+        }
+      }
       debugPrint('PullFlow: ${rows.length} remote row(s) received');
       var mergedCount = 0;
       for (final row in rows) {
@@ -538,6 +659,19 @@ class SyncService {
     }
     report.tlRejectionVoiceUrl = (row['tl_rejection_voice_url'] ?? '')
         .toString();
+    // "Material Reception": a pulled row carries the reception media as cloud
+    // URLs, stored in the path field too (the same overload used for
+    // photo_url), so `resolveMedia` / `ReportThumbnail` can display them.
+    final receptionPhotoUrl = (row['reception_photo_url'] ?? '').toString();
+    report.receptionPhotoUrl = receptionPhotoUrl;
+    if (receptionPhotoUrl.isNotEmpty) {
+      report.receptionPhotoPath = receptionPhotoUrl;
+    }
+    final receptionVoiceUrl = (row['reception_voice_url'] ?? '').toString();
+    report.receptionVoiceUrl = receptionVoiceUrl;
+    if (receptionVoiceUrl.isNotEmpty) {
+      report.receptionVoicePath = receptionVoiceUrl;
+    }
     // Shared threads ("Fix & Resubmit" audit trail + the Sub/TL chat): the
     // remote JSONB column becomes the local list of raw JSON strings that Isar
     // stores. A missing or unusable column leaves the local events untouched.

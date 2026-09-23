@@ -95,81 +95,101 @@ const ReportSchema = CollectionSchema(
       name: r'problemCategory',
       type: IsarType.string,
     ),
-    r'status': PropertySchema(id: 18, name: r'status', type: IsarType.string),
-    r'supabaseId': PropertySchema(
+    r'receptionPhotoPath': PropertySchema(
+      id: 18,
+      name: r'receptionPhotoPath',
+      type: IsarType.string,
+    ),
+    r'receptionPhotoUrl': PropertySchema(
       id: 19,
+      name: r'receptionPhotoUrl',
+      type: IsarType.string,
+    ),
+    r'receptionVoicePath': PropertySchema(
+      id: 20,
+      name: r'receptionVoicePath',
+      type: IsarType.string,
+    ),
+    r'receptionVoiceUrl': PropertySchema(
+      id: 21,
+      name: r'receptionVoiceUrl',
+      type: IsarType.string,
+    ),
+    r'status': PropertySchema(id: 22, name: r'status', type: IsarType.string),
+    r'supabaseId': PropertySchema(
+      id: 23,
       name: r'supabaseId',
       type: IsarType.string,
     ),
     r'timelineEvents': PropertySchema(
-      id: 20,
+      id: 24,
       name: r'timelineEvents',
       type: IsarType.stringList,
     ),
     r'timestamp': PropertySchema(
-      id: 21,
+      id: 25,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'tlRejectionPhotoPath': PropertySchema(
-      id: 22,
+      id: 26,
       name: r'tlRejectionPhotoPath',
       type: IsarType.string,
     ),
     r'tlRejectionPhotoUrl': PropertySchema(
-      id: 23,
+      id: 27,
       name: r'tlRejectionPhotoUrl',
       type: IsarType.string,
     ),
     r'tlRejectionVoicePath': PropertySchema(
-      id: 24,
+      id: 28,
       name: r'tlRejectionVoicePath',
       type: IsarType.string,
     ),
     r'tlRejectionVoiceUrl': PropertySchema(
-      id: 25,
+      id: 29,
       name: r'tlRejectionVoiceUrl',
       type: IsarType.string,
     ),
     r'tlValidatedAt': PropertySchema(
-      id: 26,
+      id: 30,
       name: r'tlValidatedAt',
       type: IsarType.dateTime,
     ),
     r'tlValidationPhotoPath': PropertySchema(
-      id: 27,
+      id: 31,
       name: r'tlValidationPhotoPath',
       type: IsarType.string,
     ),
     r'tlValidationPhotoUrl': PropertySchema(
-      id: 28,
+      id: 32,
       name: r'tlValidationPhotoUrl',
       type: IsarType.string,
     ),
     r'tlValidationType': PropertySchema(
-      id: 29,
+      id: 33,
       name: r'tlValidationType',
       type: IsarType.string,
     ),
     r'tlValidatorId': PropertySchema(
-      id: 30,
+      id: 34,
       name: r'tlValidatorId',
       type: IsarType.string,
     ),
-    r'type': PropertySchema(id: 31, name: r'type', type: IsarType.string),
-    r'userId': PropertySchema(id: 32, name: r'userId', type: IsarType.string),
+    r'type': PropertySchema(id: 35, name: r'type', type: IsarType.string),
+    r'userId': PropertySchema(id: 36, name: r'userId', type: IsarType.string),
     r'voicePath': PropertySchema(
-      id: 33,
+      id: 37,
       name: r'voicePath',
       type: IsarType.string,
     ),
     r'voiceStatus': PropertySchema(
-      id: 34,
+      id: 38,
       name: r'voiceStatus',
       type: IsarType.string,
     ),
     r'voiceUrl': PropertySchema(
-      id: 35,
+      id: 39,
       name: r'voiceUrl',
       type: IsarType.string,
     ),
@@ -210,6 +230,10 @@ int _reportEstimateSize(
   bytesCount += 3 + object.photoStatus.length * 3;
   bytesCount += 3 + object.photoUrl.length * 3;
   bytesCount += 3 + object.problemCategory.length * 3;
+  bytesCount += 3 + object.receptionPhotoPath.length * 3;
+  bytesCount += 3 + object.receptionPhotoUrl.length * 3;
+  bytesCount += 3 + object.receptionVoicePath.length * 3;
+  bytesCount += 3 + object.receptionVoiceUrl.length * 3;
   bytesCount += 3 + object.status.length * 3;
   bytesCount += 3 + object.supabaseId.length * 3;
   bytesCount += 3 + object.timelineEvents.length * 3;
@@ -259,24 +283,28 @@ void _reportSerialize(
   writer.writeString(offsets[15], object.photoStatus);
   writer.writeString(offsets[16], object.photoUrl);
   writer.writeString(offsets[17], object.problemCategory);
-  writer.writeString(offsets[18], object.status);
-  writer.writeString(offsets[19], object.supabaseId);
-  writer.writeStringList(offsets[20], object.timelineEvents);
-  writer.writeDateTime(offsets[21], object.timestamp);
-  writer.writeString(offsets[22], object.tlRejectionPhotoPath);
-  writer.writeString(offsets[23], object.tlRejectionPhotoUrl);
-  writer.writeString(offsets[24], object.tlRejectionVoicePath);
-  writer.writeString(offsets[25], object.tlRejectionVoiceUrl);
-  writer.writeDateTime(offsets[26], object.tlValidatedAt);
-  writer.writeString(offsets[27], object.tlValidationPhotoPath);
-  writer.writeString(offsets[28], object.tlValidationPhotoUrl);
-  writer.writeString(offsets[29], object.tlValidationType);
-  writer.writeString(offsets[30], object.tlValidatorId);
-  writer.writeString(offsets[31], object.type);
-  writer.writeString(offsets[32], object.userId);
-  writer.writeString(offsets[33], object.voicePath);
-  writer.writeString(offsets[34], object.voiceStatus);
-  writer.writeString(offsets[35], object.voiceUrl);
+  writer.writeString(offsets[18], object.receptionPhotoPath);
+  writer.writeString(offsets[19], object.receptionPhotoUrl);
+  writer.writeString(offsets[20], object.receptionVoicePath);
+  writer.writeString(offsets[21], object.receptionVoiceUrl);
+  writer.writeString(offsets[22], object.status);
+  writer.writeString(offsets[23], object.supabaseId);
+  writer.writeStringList(offsets[24], object.timelineEvents);
+  writer.writeDateTime(offsets[25], object.timestamp);
+  writer.writeString(offsets[26], object.tlRejectionPhotoPath);
+  writer.writeString(offsets[27], object.tlRejectionPhotoUrl);
+  writer.writeString(offsets[28], object.tlRejectionVoicePath);
+  writer.writeString(offsets[29], object.tlRejectionVoiceUrl);
+  writer.writeDateTime(offsets[30], object.tlValidatedAt);
+  writer.writeString(offsets[31], object.tlValidationPhotoPath);
+  writer.writeString(offsets[32], object.tlValidationPhotoUrl);
+  writer.writeString(offsets[33], object.tlValidationType);
+  writer.writeString(offsets[34], object.tlValidatorId);
+  writer.writeString(offsets[35], object.type);
+  writer.writeString(offsets[36], object.userId);
+  writer.writeString(offsets[37], object.voicePath);
+  writer.writeString(offsets[38], object.voiceStatus);
+  writer.writeString(offsets[39], object.voiceUrl);
 }
 
 Report _reportDeserialize(
@@ -299,24 +327,28 @@ Report _reportDeserialize(
   object.photoStatus = reader.readString(offsets[15]);
   object.photoUrl = reader.readString(offsets[16]);
   object.problemCategory = reader.readString(offsets[17]);
-  object.status = reader.readString(offsets[18]);
-  object.supabaseId = reader.readString(offsets[19]);
-  object.timelineEvents = reader.readStringList(offsets[20]) ?? [];
-  object.timestamp = reader.readDateTime(offsets[21]);
-  object.tlRejectionPhotoPath = reader.readString(offsets[22]);
-  object.tlRejectionPhotoUrl = reader.readString(offsets[23]);
-  object.tlRejectionVoicePath = reader.readString(offsets[24]);
-  object.tlRejectionVoiceUrl = reader.readString(offsets[25]);
-  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[26]);
-  object.tlValidationPhotoPath = reader.readString(offsets[27]);
-  object.tlValidationPhotoUrl = reader.readString(offsets[28]);
-  object.tlValidationType = reader.readString(offsets[29]);
-  object.tlValidatorId = reader.readString(offsets[30]);
-  object.type = reader.readString(offsets[31]);
-  object.userId = reader.readString(offsets[32]);
-  object.voicePath = reader.readString(offsets[33]);
-  object.voiceStatus = reader.readString(offsets[34]);
-  object.voiceUrl = reader.readString(offsets[35]);
+  object.receptionPhotoPath = reader.readString(offsets[18]);
+  object.receptionPhotoUrl = reader.readString(offsets[19]);
+  object.receptionVoicePath = reader.readString(offsets[20]);
+  object.receptionVoiceUrl = reader.readString(offsets[21]);
+  object.status = reader.readString(offsets[22]);
+  object.supabaseId = reader.readString(offsets[23]);
+  object.timelineEvents = reader.readStringList(offsets[24]) ?? [];
+  object.timestamp = reader.readDateTime(offsets[25]);
+  object.tlRejectionPhotoPath = reader.readString(offsets[26]);
+  object.tlRejectionPhotoUrl = reader.readString(offsets[27]);
+  object.tlRejectionVoicePath = reader.readString(offsets[28]);
+  object.tlRejectionVoiceUrl = reader.readString(offsets[29]);
+  object.tlValidatedAt = reader.readDateTimeOrNull(offsets[30]);
+  object.tlValidationPhotoPath = reader.readString(offsets[31]);
+  object.tlValidationPhotoUrl = reader.readString(offsets[32]);
+  object.tlValidationType = reader.readString(offsets[33]);
+  object.tlValidatorId = reader.readString(offsets[34]);
+  object.type = reader.readString(offsets[35]);
+  object.userId = reader.readString(offsets[36]);
+  object.voicePath = reader.readString(offsets[37]);
+  object.voiceStatus = reader.readString(offsets[38]);
+  object.voiceUrl = reader.readString(offsets[39]);
   return object;
 }
 
@@ -368,19 +400,19 @@ P _reportDeserializeProp<P>(
     case 19:
       return (reader.readString(offset)) as P;
     case 20:
-      return (reader.readStringList(offset) ?? []) as P;
+      return (reader.readString(offset)) as P;
     case 21:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 22:
       return (reader.readString(offset)) as P;
     case 23:
       return (reader.readString(offset)) as P;
     case 24:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringList(offset) ?? []) as P;
     case 25:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 26:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 27:
       return (reader.readString(offset)) as P;
     case 28:
@@ -388,7 +420,7 @@ P _reportDeserializeProp<P>(
     case 29:
       return (reader.readString(offset)) as P;
     case 30:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 31:
       return (reader.readString(offset)) as P;
     case 32:
@@ -398,6 +430,14 @@ P _reportDeserializeProp<P>(
     case 34:
       return (reader.readString(offset)) as P;
     case 35:
+      return (reader.readString(offset)) as P;
+    case 36:
+      return (reader.readString(offset)) as P;
+    case 37:
+      return (reader.readString(offset)) as P;
+    case 38:
+      return (reader.readString(offset)) as P;
+    case 39:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -2062,6 +2102,588 @@ extension ReportQueryFilter on QueryBuilder<Report, Report, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'problemCategory', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoPathEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoPathBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receptionPhotoPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'receptionPhotoPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoPathMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'receptionPhotoPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receptionPhotoPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'receptionPhotoPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoUrlGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receptionPhotoUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'receptionPhotoUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionPhotoUrlMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'receptionPhotoUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receptionPhotoUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionPhotoUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'receptionPhotoUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoicePathEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoicePathBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receptionVoicePath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'receptionVoicePath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoicePathMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'receptionVoicePath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receptionVoicePath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoicePathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'receptionVoicePath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoiceUrlGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'receptionVoiceUrl',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoiceUrlStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'receptionVoiceUrl',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition> receptionVoiceUrlMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'receptionVoiceUrl',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoiceUrlIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'receptionVoiceUrl', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterFilterCondition>
+  receptionVoiceUrlIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'receptionVoiceUrl', value: ''),
       );
     });
   }
@@ -4783,6 +5405,54 @@ extension ReportQuerySortBy on QueryBuilder<Report, Report, QSortBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionVoicePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoicePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionVoicePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoicePath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionVoiceUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoiceUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> sortByReceptionVoiceUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoiceUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> sortByStatus() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'status', Sort.asc);
@@ -5205,6 +5875,54 @@ extension ReportQuerySortThenBy on QueryBuilder<Report, Report, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionPhotoPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionPhotoPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionPhotoUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionPhotoUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionPhotoUrl', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionVoicePath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoicePath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionVoicePathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoicePath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionVoiceUrl() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoiceUrl', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Report, Report, QAfterSortBy> thenByReceptionVoiceUrlDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'receptionVoiceUrl', Sort.desc);
+    });
+  }
+
   QueryBuilder<Report, Report, QAfterSortBy> thenByStatus() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'status', Sort.asc);
@@ -5536,6 +6254,50 @@ extension ReportQueryWhereDistinct on QueryBuilder<Report, Report, QDistinct> {
     });
   }
 
+  QueryBuilder<Report, Report, QDistinct> distinctByReceptionPhotoPath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'receptionPhotoPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByReceptionPhotoUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'receptionPhotoUrl',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByReceptionVoicePath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'receptionVoicePath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<Report, Report, QDistinct> distinctByReceptionVoiceUrl({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'receptionVoiceUrl',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
   QueryBuilder<Report, Report, QDistinct> distinctByStatus({
     bool caseSensitive = true,
   }) {
@@ -5811,6 +6573,30 @@ extension ReportQueryProperty on QueryBuilder<Report, Report, QQueryProperty> {
   QueryBuilder<Report, String, QQueryOperations> problemCategoryProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'problemCategory');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> receptionPhotoPathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receptionPhotoPath');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> receptionPhotoUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receptionPhotoUrl');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> receptionVoicePathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receptionVoicePath');
+    });
+  }
+
+  QueryBuilder<Report, String, QQueryOperations> receptionVoiceUrlProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'receptionVoiceUrl');
     });
   }
 

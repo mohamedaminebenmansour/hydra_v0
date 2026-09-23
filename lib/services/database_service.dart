@@ -174,6 +174,37 @@ class DatabaseService {
     );
   }
 
+  /// Persist a "Material Reception" decision (the field team received an
+  /// ordered material) and re-queue the report for a cloud push.
+  ///
+  /// [accepted] is the binary outcome: true = everything arrived as ordered
+  /// ('validated'), false = something is missing or broken ('rejected'), which
+  /// is the red delivery dispute the Owner sees on his dashboard.
+  ///
+  /// [Report.receptionPhotoPath] / [Report.receptionVoicePath] are written by
+  /// the capture flow in the same record, and [Report.status] /
+  /// [Report.dbStatus] are reset exactly like [markTlValidated] does, so
+  /// [SyncService] picks the report up again even though it was already fully
+  /// synced when the material was ordered. The already-synced media sub-statuses
+  /// are preserved, so the next push only uploads the reception photo / voice
+  /// note and updates the remote row (never a duplicate insert).
+  static Future<void> markMaterialReceived(
+    Report report, {
+    required bool accepted,
+  }) async {
+    report.ownerStatus = accepted ? 'validated' : 'rejected';
+    report.ownerStatusAt = DateTime.now();
+    report.dbStatus = 'pending';
+    report.status = 'local';
+    await _isar.writeTxn(() => _isar.reports.put(report));
+    debugPrint(
+      'ReceptionFlow: report ${report.id} material '
+      '${accepted ? 'received' : 'disputed'} '
+      '(photo=${report.receptionPhotoPath}, '
+      'voice=${report.receptionVoicePath})',
+    );
+  }
+
   /// Marks a report as read by the local user (the History card's unread
   /// dot disappears). Called by the report sheet when the thread is on
   /// screen. No-op (with a log line) when the local database is not open —

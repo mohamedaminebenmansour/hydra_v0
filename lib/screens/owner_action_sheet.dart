@@ -119,6 +119,10 @@ Report ownerReportFromRow(Map<String, dynamic> row) {
     ..tlValidationPhotoUrl = (row['tl_validation_photo_url'] ?? '').toString()
     ..tlRejectionPhotoUrl = (row['tl_rejection_photo_url'] ?? '').toString()
     ..tlRejectionVoiceUrl = (row['tl_rejection_voice_url'] ?? '').toString()
+    // "Material Reception": the reception media cloud URLs, so the Owner's
+    // thread renders the delivery photo and the voice note.
+    ..receptionPhotoUrl = (row['reception_photo_url'] ?? '').toString()
+    ..receptionVoiceUrl = (row['reception_voice_url'] ?? '').toString()
     ..timelineEvents = events;
 }
 

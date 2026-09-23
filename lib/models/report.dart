@@ -30,6 +30,15 @@ class Report {
   /// Optional path to a voice recording. Empty when none was recorded.
   String voicePath = '';
 
+  /// "Material Reception": path to the reception photo on the local filesystem,
+  /// captured when the field team receives an ordered material. Empty for every
+  /// report that did not go through the reception flow.
+  String receptionPhotoPath = '';
+
+  /// "Material Reception": path to the reception voice note on the local
+  /// filesystem. Empty when none was recorded.
+  String receptionVoicePath = '';
+
   /// Latitude of the report location.
   double lat = 0.0;
 
@@ -57,6 +66,13 @@ class Report {
   /// Persisted so a later partial-sync run can insert the row without re-uploading.
   String photoUrl = '';
   String voiceUrl = '';
+
+  /// Public URLs of the "Material Reception" media, returned by Supabase storage
+  /// after a successful upload (photo in the `photo` bucket, voice in `voice`).
+  /// A non-empty URL is the "already uploaded" flag — exactly like
+  /// [tlValidationPhotoUrl] — so a retry never re-uploads the same file.
+  String receptionPhotoUrl = '';
+  String receptionVoiceUrl = '';
 
   /// Owner's workflow decision, pulled from Supabase. One of:
   /// 'pending', 'validated', 'acknowledged', 'approved', 'rejected', 'ordered'.
@@ -152,6 +168,31 @@ class Report {
   /// This is a TL-layer decision and never touches [ownerStatus].
   @ignore
   bool get isTlRejected => tlValidationType == 'rejected';
+
+  // ---------------------------------------------------------------------------
+  // "Material Reception": the material the Owner ordered is received on site
+  // with a photo of the delivery plus a voice note, and a binary verdict —
+  // accepted ('validated') or something missing/broken ('rejected').
+  // ---------------------------------------------------------------------------
+
+  /// The field team already handled the delivery: a reception capture exists (a
+  /// live local file, or its cloud copy once the file was reclaimed), so the
+  /// 'RECEIVE MATERIAL' action is gone for good.
+  @ignore
+  bool get hasReceptionMedia =>
+      receptionPhotoPath.isNotEmpty || receptionPhotoUrl.isNotEmpty;
+
+  /// A material report the Owner ordered and nobody has received yet — exactly
+  /// the state that offers the giant 'RECEIVE MATERIAL' button.
+  @ignore
+  bool get awaitsMaterialReception =>
+      type == 'material' && ownerStatus == 'ordered' && !hasReceptionMedia;
+
+  /// The delivery was received with a problem (missing or broken items): the
+  /// red delivery-dispute state the Owner must be able to see.
+  @ignore
+  bool get hasDeliveryDispute =>
+      hasReceptionMedia && ownerStatus == 'rejected';
 
   /// Appends one entry to [activityLog] (see its doc comment for the format).
   /// [time] defaults to now; [photoPath] / [voicePath] record the local proof

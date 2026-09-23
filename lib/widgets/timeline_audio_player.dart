@@ -101,34 +101,38 @@ class _TimelineAudioPlayerState extends State<TimelineAudioPlayer> {
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: FilledButton.icon(
+      child: FilledButton(
         onPressed: _toggle,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.blue.shade700,
           foregroundColor: Colors.white,
         ),
-        icon: Icon(
-          _playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
-        ),
-        label: Expanded(
-          child: Row(
-            children: [
-              Expanded(
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 6,
-                  borderRadius: BorderRadius.circular(3),
-                  backgroundColor: Colors.white24,
-                  color: Colors.white,
-                ),
+        // The button's child is a plain Row: the transport icon, the progress
+        // bar that fills the space and the label. (An `Expanded` inside a
+        // `FilledButton.icon` label is invalid — its label sits in a `Flexible`,
+        // not a Flex — and threw a ParentData error whenever this player was
+        // rendered.)
+        child: Row(
+          children: [
+            Icon(
+              _playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
+                backgroundColor: Colors.white24,
+                color: Colors.white,
               ),
-              const SizedBox(width: 12),
-              Text(
-                _playing ? 'PAUSE' : 'PLAY VOICE',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              _playing ? 'PAUSE' : 'PLAY VOICE',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
       ),
     );

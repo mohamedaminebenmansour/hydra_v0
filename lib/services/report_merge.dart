@@ -60,6 +60,30 @@ bool mergeRemoteReport(Report local, Map<String, dynamic> remote) {
     _adoptString(local.voiceUrl, remote['voice_url']),
   );
 
+  // "Material Reception": the cloud copies of the reception media. Only gaps
+  // are filled and the local path (the working copy) is never touched — a live
+  // local capture always wins, a reclaimed one adopts the cloud URL.
+  local.receptionPhotoUrl = changes.set(
+    local.receptionPhotoUrl,
+    _adoptString(local.receptionPhotoUrl, remote['reception_photo_url']),
+  );
+  if (local.receptionPhotoPath.isEmpty && local.receptionPhotoUrl.isNotEmpty) {
+    local.receptionPhotoPath = changes.set(
+      local.receptionPhotoPath,
+      local.receptionPhotoUrl,
+    );
+  }
+  local.receptionVoiceUrl = changes.set(
+    local.receptionVoiceUrl,
+    _adoptString(local.receptionVoiceUrl, remote['reception_voice_url']),
+  );
+  if (local.receptionVoicePath.isEmpty && local.receptionVoiceUrl.isNotEmpty) {
+    local.receptionVoicePath = changes.set(
+      local.receptionVoicePath,
+      local.receptionVoiceUrl,
+    );
+  }
+
   _mergeTlGate(local, remote, changes);
 
   // Shared threads (the chat + the audit trail).

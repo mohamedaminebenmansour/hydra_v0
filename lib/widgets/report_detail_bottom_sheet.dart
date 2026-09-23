@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/report.dart';
 import '../screens/site_map_screen.dart';
 import '../services/database_service.dart';
+import 'material_reception_sheet.dart';
 import 'report_stage.dart';
 import 'report_thumbnail.dart';
 import 'report_timeline.dart';
@@ -455,9 +456,31 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
   /// 'WORK CLOSED' once the Owner had the last word, or the stage label with a
   /// lock (the Team Leader already signed the report off).
   Widget _actionBar(BuildContext context) {
-    final note = widget.actions.note;
-    final buttons = widget.actions.buttons;
-    if (buttons.isEmpty) {
+    var note = widget.actions.note;
+    var buttons = widget.actions.buttons;
+    // "Material Reception": the sheet-level guarantee — an ordered material
+    // nobody has received yet is 'closed' at the owner layer, yet it still
+    // owes the delivery decision, so ONE giant blue 'RECEIVE MATERIAL' button
+    // takes precedence over whatever the caller injected (and over the
+    // 'WORK CLOSED' bar). The condition is EXACTLY the spec's three clauses —
+    // report type, the owner's 'ordered' decision (never syncStatus or
+    // tlValidationType) and an empty local reception photo path — applied to
+    // every actor, with no role gate.
+    if (_report.type == 'material' &&
+        _report.ownerStatus == 'ordered' &&
+        _report.receptionPhotoPath.isEmpty) {
+      note =
+          'The Owner ordered this material — receive it with a photo and a '
+          'voice note.';
+      buttons = const [
+        ReportSheetAction(
+          label: 'RECEIVE MATERIAL',
+          color: Colors.blue,
+          icon: Icons.inventory_2,
+          onPressed: materialReceptionFlow,
+        ),
+      ];
+    } else if (buttons.isEmpty) {
       if (isReportClosedByOwner(_report)) return _disabledBar('WORK CLOSED');
       if (!reportStaysActionableLock(_report)) return const SizedBox.shrink();
       final label = reportStageStyle(
@@ -483,7 +506,7 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
           Row(
             children: [
               for (var i = 0; i < buttons.length; i++) ...[
-                Expanded(child: _giantActionButton(context, i)),
+                Expanded(child: _giantActionButton(context, buttons, i)),
                 if (i < buttons.length - 1) const SizedBox(width: 12),
               ],
             ],
@@ -525,8 +548,16 @@ class _ReportDetailBottomSheetState extends State<ReportDetailBottomSheet> {
   /// One giant action: an icon of size 28 with its caption underneath, on the
   /// action's own solid colour. A single action fills the bar; two or three
   /// share it equally via [Expanded], so they can never pixel-overflow.
-  Widget _giantActionButton(BuildContext context, int index) {
-    final action = widget.actions.buttons[index];
+  ///
+  /// The action is read from [barButtons] — the bar actually rendered (which
+  /// may be the sheet's own "Material Reception" override, not
+  /// `widget.actions.buttons`).
+  Widget _giantActionButton(
+    BuildContext context,
+    List<ReportSheetAction> barButtons,
+    int index,
+  ) {
+    final action = barButtons[index];
     final running = _runningAction == index;
     return Material(
       color: action.color,

@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../models/report.dart';
 import '../services/event_media.dart';
 import '../services/report_local_service.dart';
+import 'reception_media_block.dart';
 import 'report_stage.dart';
 
 // ---------------------------------------------------------------------------
@@ -43,26 +44,38 @@ class ReportTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = _threadEvents(report);
-    if (events.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-            emptyHint ?? 'No messages yet.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
-          ),
+    return Column(
+      children: [
+        Expanded(
+          child: events.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      emptyHint ?? 'No messages yet.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  // Reversed: index 0 is the newest event, drawn at the bottom
+                  // edge.
+                  reverse: true,
+                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+                  itemCount: events.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) =>
+                      _ChatBubble(event: events[events.length - 1 - index]),
+                ),
         ),
-      );
-    }
-    return ListView.separated(
-      // Reversed: index 0 is the newest event, drawn at the bottom edge.
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
-      itemCount: events.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) =>
-          _ChatBubble(event: events[events.length - 1 - index]),
+        // "Material Reception": the delivery evidence, pinned at the bottom of
+        // the thread (an empty box for every report without a reception).
+        ReceptionMediaBlock(report: report),
+      ],
     );
   }
 }
@@ -103,26 +116,37 @@ class GitReportTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = _threadEvents(report);
-    if (events.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Text(
-            emptyHint ?? 'No events yet.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
-          ),
+    return Column(
+      children: [
+        Expanded(
+          child: events.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      emptyHint ?? 'No events yet.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  itemCount: events.length,
+                  itemBuilder: (context, index) => _GitCommitRow(
+                    event: events[index],
+                    isFirst: index == 0,
+                    isLast: index == events.length - 1,
+                  ),
+                ),
         ),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: events.length,
-      itemBuilder: (context, index) => _GitCommitRow(
-        event: events[index],
-        isFirst: index == 0,
-        isLast: index == events.length - 1,
-      ),
+        // "Material Reception": the Owner reads the delivery evidence (photo,
+        // voice note, binary verdict) as the last row of the log.
+        ReceptionMediaBlock(report: report),
+      ],
     );
   }
 }

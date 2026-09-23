@@ -30,11 +30,24 @@ const String _historyLastOpenedKey = 'historyLastOpenedAtMs';
 /// Opens the camera, compresses the capture and pushes [SaveReportScreen] for
 /// a report of [type] ('work' | 'problem' | 'material').
 ///
+/// A material request takes NO photo: its payload is the voice note, so the
+/// camera is skipped entirely and the save screen opens with an empty
+/// [SaveReportScreen.photoPath] straight away.
+///
 /// Every failure is swallowed with a SnackBar: a missing camera or a broken
 /// capture must never crash the home screen.
 Future<void> startReportCapture(BuildContext context, String type) async {
   final picker = ImagePicker();
   try {
+    // "Material Request": voice-only — never force a photo for this type.
+    if (type == 'material') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SaveReportScreen(type: type, photoPath: ''),
+        ),
+      );
+      return;
+    }
     final XFile? photo = await picker.pickImage(source: ImageSource.camera);
     if (photo == null || !context.mounted) return; // user cancelled
 

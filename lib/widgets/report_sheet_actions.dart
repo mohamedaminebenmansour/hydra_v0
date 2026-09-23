@@ -14,6 +14,8 @@ import '../screens/owner_action_sheet.dart' show OwnerDecisionWriter;
 import '../services/database_service.dart';
 import '../services/report_local_service.dart';
 import '../services/sync_service.dart';
+import 'material_reception_sheet.dart';
+import 'notify_gate.dart';
 import 'report_detail_bottom_sheet.dart';
 
 // ---------------------------------------------------------------------------
@@ -47,15 +49,6 @@ String tlValidationTypeForDistance(double meters) =>
 /// single local account convention (`tl_1`), reusing the report's own user id.
 String tlValidatorIdOf(Report report) =>
     report.userId.isNotEmpty ? report.userId : 'tl_1';
-
-/// One SnackBar, guarded so a popped context can never crash a flow.
-void notifyGate(BuildContext context, String message) {
-  if (context.mounted) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-}
 
 /// 'VALIDATE REMOTELY (Photo Only)': no proof photo and no GPS check — the TL
 /// simply confirms the report from wherever they are.
@@ -321,8 +314,15 @@ ReportSheetActions tlGateActions() => ReportSheetActions(
 /// Returns true when the subcontractor owes a fix on this report: the Team
 /// Leader rejected it, or the Owner rejected it (a rejection never locks the
 /// conversation — the sub must still be able to argue or fix).
+///
+/// A "Material Reception" delivery dispute is deliberately excluded: that
+/// rejection is about what the supplier delivered, not about the sub's work, so
+/// asking him to "fix and resubmit" would be meaningless (and would push the
+/// report back through the Team Leader gate while the Owner is handling the
+/// dispute). The report stays with the Owner.
 bool subOwesAFix(Report report) =>
-    report.isTlRejected || report.ownerStatus == 'rejected';
+    report.isTlRejected ||
+    (report.ownerStatus == 'rejected' && !report.hasDeliveryDispute);
 
 /// The subcontractor's single "FIX & RESUBMIT" action, shown when the Team
 /// Leader rejected the report (the red stage): one giant green camera button
@@ -339,19 +339,60 @@ ReportSheetActions subFixActions() => ReportSheetActions(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// "Material Reception": the ordered material is delivered on site.
+//
+// The Owner ordered it (owner_status 'ordered'), so the report is closed at the
+// owner layer — yet the field team still has one binary job: receive the
+// delivery with a photo plus a voice note, and either ACCEPT ALL ('validated')
+// or REPORT ISSUE ('rejected', the red delivery dispute the Owner sees).
+//
+// The two field roles do it; the Owner, who placed the order, never does.
+// ---------------------------------------------------------------------------
+
+/// True when [report] is an ordered material nobody has received yet **and**
+/// [role] may receive it (anybody but the Owner).
+bool materialReceptionNeeded(Report report, String role) =>
+    report.awaitsMaterialReception && role != 'owner';
+
+/// The single giant action of an ordered material awaiting its delivery: one
+/// blue button, filling the whole bar. The flow itself lives next to the
+/// capture sheet (`material_reception_sheet.dart`) so the detail sheet can run
+/// it too without an import cycle.
+ReportSheetActions materialReceptionActions() => ReportSheetActions(
+  note: 'The Owner ordered this material — receive it with a photo and a '
+      'voice note.',
+  buttons: [
+    ReportSheetAction(
+      label: 'RECEIVE MATERIAL',
+      color: Colors.blue,
+      icon: Icons.inventory_2,
+      onPressed: materialReceptionFlow,
+    ),
+  ],
+);
+
 /// The default action set for [report] given who is looking at it. One source
 /// of truth shared by the History list, the map, the Team Leader dashboard and
 /// the legacy full-screen host, so the same report always shows the same
 /// buttons wherever it is opened.
 ///
+/// - An ordered material the field team has not received yet: the giant
+///   'RECEIVE MATERIAL' action (both field roles, never the Owner).
 /// - A closed report (the Owner decided): no actions — the sheet shows its
 ///   disabled grey 'WORK CLOSED' bar.
 /// - A Team Leader and a report still awaiting the gate: REMOTE / ON SITE / REJECT.
 /// - A subcontractor looking at a rejected report: FIX & RESUBMIT.
 /// - Anything else: nothing to do, so no bar at all.
 ReportSheetActions defaultActionsFor(Report report, {String? role}) {
-  if (isReportClosedByOwner(report)) return const ReportSheetActions();
   final effectiveRole = role ?? userRole;
+  // "Material Reception" comes first: an ordered material is 'closed' at the
+  // owner layer, yet it is exactly the state that still owes the delivery
+  // decision — the closed bar must not swallow it.
+  if (materialReceptionNeeded(report, effectiveRole)) {
+    return materialReceptionActions();
+  }
+  if (isReportClosedByOwner(report)) return const ReportSheetActions();
   if (effectiveRole == 'team_leader') {
     // `needsTlValidation` is (work|material) && tlValidatedAt == null: the
     // "TL && tlValidatedAt == null" rule plus the domain guard that keeps
@@ -455,14 +496,19 @@ Future<bool?> showDefaultReportDetailSheet(
 /// Compresses a raw camera capture into a small persistent JPEG inside
 /// `<documents>/reports` and returns its absolute path ('' on failure).
 /// Mirrors the Home screen capture flow so uploads stay light on slow links.
-Future<String> persistCapture(String rawPath) async {
+///
+/// [prefix] names the file, so every flow keeps its own captures apart
+/// ('verify' for the Team Leader proof, 'reception' for a material delivery)
+/// while uploading through the same helper.
+Future<String> persistCapture(String rawPath, {String prefix = 'verify'}) async {
   try {
     final dir = await getApplicationDocumentsDirectory();
     final reportsDir = await Directory(
       '${dir.path}/reports',
     ).create(recursive: true);
     final savedPath =
-        '${reportsDir.path}/verify_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        '${reportsDir.path}/${prefix}_'
+        '${DateTime.now().millisecondsSinceEpoch}.jpg';
     final compressed = await FlutterImageCompress.compressAndGetFile(
       rawPath,
       savedPath,
@@ -476,16 +522,16 @@ Future<String> persistCapture(String rawPath) async {
       try {
         await File(rawPath).delete();
       } catch (e, st) {
-        debugPrint('TlGate: raw capture cleanup failed: $e\n$st');
+        debugPrint('CaptureFlow: raw capture cleanup failed: $e\n$st');
       }
-      debugPrint('TlGate: proof photo stored at ${compressed.path}');
+      debugPrint('CaptureFlow: photo stored at ${compressed.path}');
       return compressed.path;
     }
     // Compression failed — keep the original capture if it is usable.
     if (await ReportLocalService.isValidFile(rawPath)) return rawPath;
     return '';
   } catch (e, st) {
-    debugPrint('TlGate: persistCapture failed: $e\n$st');
+    debugPrint('CaptureFlow: persistCapture failed: $e\n$st');
     return '';
   }
 }

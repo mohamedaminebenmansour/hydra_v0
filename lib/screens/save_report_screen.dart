@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -14,6 +16,11 @@ import '../widgets/back_button_circle.dart';
 
 /// Shown after a photo is captured: previews the image, lets the user record an
 /// optional voice note, then confirms the local Report save.
+///
+/// Exception — the **material request** (`type == 'material'`): no photo is
+/// ever forced (the home flow skips the camera for this type), the screen shows
+/// one giant mic labelled 'RECORD YOUR REQUEST', the voice note is mandatory
+/// and the photo is optional via the smaller '📷 Add Photo (Optional)' button.
 class SaveReportScreen extends StatefulWidget {
   const SaveReportScreen({
     super.key,
@@ -45,6 +52,11 @@ class _SaveReportScreenState extends State<SaveReportScreen>
 
   /// True once a voice note has been recorded (enables Re-record).
   bool _hasRecording = false;
+
+  /// "Material Request" only: path of the OPTIONAL photo captured from this
+  /// screen (the forced capture flow never runs for 'material'). Empty when
+  /// the request stays voice-only.
+  String _materialPhotoPath = '';
 
   /// Selected problem category for problem-type reports.
   String? _problemCategory;
@@ -318,6 +330,81 @@ class _SaveReportScreenState extends State<SaveReportScreen>
     await _onMicTap();
   }
 
+  /// "Material Request": the OPTIONAL photo. Opens the camera on demand and
+  /// stores a compressed persistent copy exactly like the forced
+  /// work/problem capture, so an optional photo still uploads fast on 3G.
+  /// Re-tapping replaces (and cleans up) the previous capture.
+  Future<void> _addOptionalMaterialPhoto() async {
+    try {
+      final XFile? photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+      );
+      if (photo == null || !mounted) return; // user cancelled
+      final dir = await getApplicationDocumentsDirectory();
+      final reportsDir = await Directory(
+        '${dir.path}/reports',
+      ).create(recursive: true);
+      final savedPath =
+          '${reportsDir.path}/photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      String storedPath;
+      try {
+        final compressed = await FlutterImageCompress.compressAndGetFile(
+          photo.path,
+          savedPath,
+          minWidth: 640,
+          minHeight: 640,
+          quality: 70,
+          format: CompressFormat.jpeg,
+        );
+        storedPath =
+            compressed?.path ??
+            await ReportLocalService.persistMedia(photo.path, 'photo');
+      } catch (e, st) {
+        debugPrint('SaveFlow: optional photo compress failed: $e\n$st');
+        storedPath = await ReportLocalService.persistMedia(photo.path, 'photo');
+      }
+      if (!await ReportLocalService.isValidFile(storedPath)) {
+        debugPrint('SaveFlow: optional photo invalid: "$storedPath"');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not store photo')),
+        );
+        return;
+      }
+      final previous = _materialPhotoPath;
+      if (!mounted) return;
+      setState(() => _materialPhotoPath = storedPath);
+      if (previous.isNotEmpty && previous != storedPath) {
+        try {
+          final old = File(previous);
+          if (old.existsSync()) old.deleteSync();
+        } catch (e, st) {
+          debugPrint('SaveFlow: old optional photo cleanup failed: $e\n$st');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('SaveFlow: optional photo capture failed: $e\n$st');
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Camera not available')));
+    }
+  }
+
+  /// Drops the optional material photo (and its file) — the request goes back
+  /// to being voice-only.
+  void _removeOptionalMaterialPhoto() {
+    final old = _materialPhotoPath;
+    setState(() => _materialPhotoPath = '');
+    if (old.isEmpty) return;
+    try {
+      final f = File(old);
+      if (f.existsSync()) f.deleteSync();
+    } catch (e, st) {
+      debugPrint('SaveFlow: optional photo cleanup failed: $e\n$st');
+    }
+  }
+
   /// Builds the problem category picker: 4 generously spaced icon circles,
   /// laid out in a Wrap so they have room to breathe and are easy to hit.
   Widget _buildProblemCategoryRow() {
@@ -402,6 +489,59 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       _saving = true;
     });
     try {
+      // Validate the two media BEFORE any platform probe (GPS, device info):
+      // a blocked save must fail fast with its exact message instead of making
+      // the user wait for a location fix first.
+      //
+      // Voice note: optional for work/problem (a photo-only report is legal),
+      // MANDATORY for the material request — the recording IS the request, so
+      // without it there is nothing to save.
+      if (!_isValidFile(currentVoicePath)) {
+        if (widget.type == 'material') {
+          debugPrint('SaveFlow: material request without a voice note — '
+              'blocking save');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Voice note required')),
+          );
+          setState(() {
+            _saving = false;
+          });
+          return;
+        }
+        debugPrint(
+          'SaveFlow: voice file invalid, saving photo-only report '
+          '(path was: "$currentVoicePath")',
+        );
+        currentVoicePath = null;
+      }
+      // Photo: mandatory for work/problem, OPTIONAL for the material request
+      // (captured from this screen through '📷 Add Photo (Optional)'; an empty
+      // path is persisted as ''). Either way a broken path never reaches Isar.
+      var photoPath = widget.type == 'material'
+          ? _materialPhotoPath
+          : widget.photoPath;
+      if (!_isValidFile(photoPath)) {
+        if (widget.type != 'material') {
+          debugPrint(
+            'SaveFlow: photo file invalid, blocking save '
+            '(path was: "$photoPath")',
+          );
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Photo file missing, cannot save')),
+          );
+          setState(() {
+            _saving = false;
+          });
+          return;
+        }
+        debugPrint(
+          'SaveFlow: material request has no photo — saving with an empty '
+          'photoPath (was: "$photoPath")',
+        );
+        photoPath = '';
+      }
       // GPS position: 0.0 on disabled services, denied permission, or
       // failure. The OS permission dialog is only shown when needed.
       double lat = 0.0;
@@ -443,37 +583,9 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         debugPrint('DeviceFlow: androidInfo failed: $e\n$st');
       }
 
-      // Re-validate the voice file at save time: if the recording was
-      // interrupted (e.g. app backgrounded and lost focus), the file may not
-      // exist or may be empty. Save a photo-only report rather than a broken
-      // path in the database.
-      if (!_isValidFile(currentVoicePath)) {
-        debugPrint(
-          'SaveFlow: voice file invalid, saving photo-only report '
-          '(path was: "$currentVoicePath")',
-        );
-        currentVoicePath = null;
-      }
-      // Symmetric validation for the photo: it is mandatory, so block the
-      // save entirely if the file is missing or empty instead of persisting
-      // a broken path to Isar.
-      if (!_isValidFile(widget.photoPath)) {
-        debugPrint(
-          'SaveFlow: photo file invalid, blocking save '
-          '(path was: "${widget.photoPath}")',
-        );
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo file missing, cannot save')),
-        );
-        setState(() {
-          _saving = false;
-        });
-        return;
-      }
       final report = Report()
         ..type = widget.type
-        ..photoPath = widget.photoPath
+        ..photoPath = photoPath
         ..voicePath = currentVoicePath ?? ''
         ..lat = lat
         ..lng = lng
@@ -488,7 +600,7 @@ class _SaveReportScreenState extends State<SaveReportScreen>
         ..addTimelineEvent(
           actor: 'sub',
           action: 'submit',
-          photoPath: widget.photoPath,
+          photoPath: photoPath,
           voicePath: currentVoicePath ?? '',
         );
       final savedId = await ReportLocalService.saveReport(report);
@@ -529,17 +641,22 @@ class _SaveReportScreenState extends State<SaveReportScreen>
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(
-              flex: 3,
-              child: Image.file(
-                File(widget.photoPath),
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.broken_image, size: 80),
+            // Photo preview — work/problem only. The material request is
+            // voice-only (photoPath is ''), so there is no image to show and
+            // the mic zone below gets the whole space instead.
+            if (widget.type != 'material') ...[
+              Expanded(
+                flex: 3,
+                child: Image.file(
+                  File(widget.photoPath),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.broken_image, size: 80),
+                  ),
                 ),
               ),
-            ),
+            ],
             // Problem category selection (only for problem-type reports).
             if (widget.type == 'problem') ...[
               const SizedBox(height: 12),
@@ -554,6 +671,49 @@ class _SaveReportScreenState extends State<SaveReportScreen>
               const SizedBox(height: 8),
               _buildProblemCategoryRow(),
               const SizedBox(height: 12),
+            ],
+            // "Material Request": the giant mic stays the star; the photo is
+            // optional — one smaller secondary button opens the camera, and a
+            // thumbnail + remove appear once something was captured.
+            if (widget.type == 'material') ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_materialPhotoPath.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(
+                          File(_materialPhotoPath),
+                          height: 96,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const SizedBox(
+                            height: 96,
+                            child: Icon(Icons.broken_image, size: 36),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    SizedBox(
+                      height: 44,
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _addOptionalMaterialPhoto,
+                        icon: const Icon(Icons.add_a_photo, size: 18),
+                        label: const Text('📷 Add Photo (Optional)'),
+                      ),
+                    ),
+                    if (_materialPhotoPath.isNotEmpty)
+                      TextButton(
+                        onPressed: _removeOptionalMaterialPhoto,
+                        child: const Text('Remove photo'),
+                      ),
+                  ],
+                ),
+              ),
             ],
             // Mic zone: ripple rings while recording, re-record pill after.
             Expanded(
@@ -655,7 +815,11 @@ class _SaveReportScreenState extends State<SaveReportScreen>
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _hasRecording ? 'VOICE OK' : 'ADD VOICE NOTE',
+                              _hasRecording
+                                  ? 'VOICE OK'
+                                  : widget.type == 'material'
+                                      ? 'RECORD YOUR REQUEST'
+                                      : 'ADD VOICE NOTE',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,

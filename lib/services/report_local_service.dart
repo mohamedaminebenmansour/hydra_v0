@@ -146,6 +146,24 @@ class ReportLocalService {
           report.voicePath = '';
           changed = true;
         }
+        // "Material Reception": the reception captures follow the same rule —
+        // the file is only released once its cloud copy really exists.
+        if (report.receptionPhotoPath.isNotEmpty &&
+            report.receptionPhotoUrl.isNotEmpty) {
+          if (await _deleteMediaQuietly(report.receptionPhotoPath)) {
+            filesDeleted++;
+          }
+          report.receptionPhotoPath = '';
+          changed = true;
+        }
+        if (report.receptionVoicePath.isNotEmpty &&
+            report.receptionVoiceUrl.isNotEmpty) {
+          if (await _deleteMediaQuietly(report.receptionVoicePath)) {
+            filesDeleted++;
+          }
+          report.receptionVoicePath = '';
+          changed = true;
+        }
         final thread = await releaseThreadMedia(report);
         filesDeleted += thread.deleted;
         changed = changed || thread.changed;
